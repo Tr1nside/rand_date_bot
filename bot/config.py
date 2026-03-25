@@ -1,29 +1,20 @@
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-    )
+    """Настройки приложения, загружаемые из переменных окружения.
 
-    # --- Telegram ---
-    BOT_TOKEN: SecretStr
+    Attributes:
+        BOT_TOKEN: Токен Telegram-бота.
+        DB_PATH: Путь к файлу SQLite-базы данных.
+        FIRST_ADMIN_ID: Telegram ID первого администратора, создаётся при инициализации БД.
+    """
 
-    # --- Database ---
+    BOT_TOKEN: str
     DB_PATH: str = "bot.db"
+    FIRST_ADMIN_ID: int | None = None
 
-    # --- First admin (bootstrapping) ---
-    # Telegram user_id первого администратора.
-    # Используется в init_db(): если в таблице users нет ни одного админа —
-    # создаётся запись с этим id и is_admin=True.
-    FIRST_ADMIN_ID: int
-
-    @property
-    def db_url(self) -> str:
-        """Асинхронный DSN для SQLAlchemy."""
-        return f"sqlite+aiosqlite:///{self.DB_PATH}"
+    model_config = {"env_file": ".env"}
 
 
 settings = Settings()
