@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select, func
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,14 +8,7 @@ from .models import Date, User, UserHistory
 
 
 class DateRepository:
-    """Репозиторий для работы со свиданиями.
-
-    Содержит только SQL-операции над таблицей `dates`.
-    Никакой бизнес-логики.
-
-    Attributes:
-        session: Асинхронная сессия SQLAlchemy.
-    """
+    """Репозиторий для работы со свиданиями в базе данных."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -38,11 +31,11 @@ class DateRepository:
         Returns:
             Объект Date, если найдено подходящее свидание, иначе None.
         """
-        visited_subquery = (
+        visited_subq = (
             select(UserHistory.date_id)
             .where(
                 UserHistory.user_id == user_id,
-                UserHistory.dropped_at.is_not(None),
+                UserHistory.dropped_at.isnot(None),
             )
             .scalar_subquery()
         )
@@ -53,7 +46,7 @@ class DateRepository:
                 Date.cash <= cash,
                 Date.time <= time,
                 Date.is_home == is_home,
-                Date.id.not_in(visited_subquery),
+                Date.id.not_in(visited_subq),
             )
             .order_by(func.random())
             .limit(1)
@@ -66,149 +59,166 @@ class DateRepository:
         """Возвращает свидание по его ID.
 
         Args:
-            date_id: Первичный ключ свидания.
+            date_id: Идентификатор свидания.
 
         Returns:
-            Объект Date или None, если не найдено.
+            Объект Date или None если не найдено.
         """
-        return await self._session.get(Date, date_id)
+        result = await self._session.execute(select(Date).where(Date.id == date_id))
+        return result.scalar_one_or_none()
 
     async def add(self, date: Date) -> Date:
         """Добавляет новое свидание в базу данных.
 
         Args:
-            date: Объект Date для сохранения.
+            date: Объект свидания для сохранения.
 
         Returns:
-            Сохранённый объект Date с присвоенным id.
+            Сохранённый объект Date с присвоенным ID.
         """
         self._session.add(date)
-        await self._session.flush()
+        await self._session.commit()
         await self._session.refresh(date)
         return date
 
 
 class UserRepository:
-    """Репозиторий для работы с пользователями.
-
-    Содержит только SQL-операции над таблицей `users`.
-    Никакой бизнес-логики.
-
-    Attributes:
-        _session: Асинхронная сессия SQLAlchemy.
-    """
+    """Репозиторий для работы с пользователями в базе данных."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
     async def get_or_create(self, user_id: int, username: str | None) -> User:
-        """Возвращает пользователя по ID или создаёт нового.
+        """Возвращает существующего пользователя или создаёт нового.
 
         Args:
             user_id: Telegram ID пользователя.
-            username: Telegram username без @, может быть None.
+            username: Telegram-юзернейм пользователя.
 
         Returns:
-            Существующий или только что созданный объект User.
+            Объект User.
         """
-        user = await self._session.get(User, user_id)
+        result = await self._session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
 
         if user is None:
             user = User(id=user_id, username=username)
             self._session.add(user)
-            await self._session.flush()
+            await self._session.commit()
+            await self._session.refresh(user)
 
         return user
 
     async def get_by_id(self, user_id: int) -> User | None:
-        """Возвращает пользователя по Telegram ID.
+        """Возвращает пользователя по его Telegram ID.
 
         Args:
             user_id: Telegram ID пользователя.
 
         Returns:
-            Объект User или None, если не найден.
+            Объект User или None если не найден.
         """
-        return await self._session.get(User, user_id)
+        result = await self._session.execute(select(User).where(User.id == user_id))
+        return result.scalar_one_or_none()
 
-    async def set_admin(self, user_id: int, value: bool) -> None:
-        """Устанавливает или снимает флаг администратора у пользователя.
+    async def set_admin(self, user_id: int, value: bool) -> bool:
+        """Устанавливает или снимает права администратора.
 
         Args:
             user_id: Telegram ID пользователя.
-            value: True — назначить админом, False — снять права.
+            value: True — назначить, False — снять.
+
+        Returns:
+            True если пользователь найден и обновлён, False если не найден.
         """
-        user = await self._session.get(User, user_id)
-        if user is not None:
-            user.is_admin = value
-            await self._session.flush()
+        user = await self.get_by_id(user_id)
+        if user is None:
+            return False
+        user.is_admin = value
+        await self._session.commit()
+        return True
 
     async def get_all_admins(self) -> list[User]:
         """Возвращает список всех администраторов."""
-        stmt = select(User).where(User.is_admin.is_(True))
-        result = await self._session.execute(stmt)
+        result = await self._session.execute(
+            select(User).where(User.is_admin == True)  # noqa: E712
+        )
         return list(result.scalars().all())
 
 
 class HistoryRepository:
-    """Репозиторий для работы с историей взаимодействий.
-
-    Содержит только SQL-операции над таблицей `user_history`.
-    Никакой бизнес-логики.
-
-    Attributes:
-        _session: Асинхронная сессия SQLAlchemy.
-    """
+    """Репозиторий для работы с историей взаимодействий пользователей."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
     async def get_or_create(self, user_id: int, date_id: int) -> UserHistory:
-        """Возвращает запись истории или создаёт новую.
+        """Возвращает запись истории или создаёт новую для пары (user_id, date_id).
 
         Args:
             user_id: Telegram ID пользователя.
-            date_id: ID свидания.
+            date_id: Идентификатор свидания.
 
         Returns:
-            Существующий или только что созданный объект UserHistory.
+            Объект UserHistory.
         """
-        stmt = select(UserHistory).where(
-            UserHistory.user_id == user_id,
-            UserHistory.date_id == date_id,
+        result = await self._session.execute(
+            select(UserHistory).where(
+                UserHistory.user_id == user_id,
+                UserHistory.date_id == date_id,
+            )
         )
-        result = await self._session.execute(stmt)
-        history = result.scalar_one_or_none()
+        record = result.scalar_one_or_none()
 
-        if history is None:
-            history = UserHistory(user_id=user_id, date_id=date_id)
-            self._session.add(history)
-            await self._session.flush()
+        if record is None:
+            record = UserHistory(user_id=user_id, date_id=date_id)
+            self._session.add(record)
+            await self._session.commit()
+            await self._session.refresh(record)
 
-        return history
+        return record
 
     async def toggle_like(self, user_id: int, date_id: int) -> bool:
-        """Переключает лайк пользователя на свидание.
+        """Переключает состояние лайка для пары (user_id, date_id).
 
         Args:
             user_id: Telegram ID пользователя.
-            date_id: ID свидания.
+            date_id: Идентификатор свидания.
 
         Returns:
-            Новое значение флага is_liked после переключения.
+            Новое значение is_liked после переключения.
         """
-        history = await self.get_or_create(user_id=user_id, date_id=date_id)
-        history.is_liked = not history.is_liked
-        await self._session.flush()
-        return history.is_liked
+        record = await self.get_or_create(user_id, date_id)
+        record.is_liked = not record.is_liked
+        await self._session.commit()
+        return record.is_liked
 
     async def mark_visited(self, user_id: int, date_id: int) -> None:
-        """Отмечает свидание как посещённое — устанавливает dropped_at.
+        """Отмечает свидание как посещённое (устанавливает dropped_at = now).
 
         Args:
             user_id: Telegram ID пользователя.
-            date_id: ID свидания.
+            date_id: Идентификатор свидания.
         """
-        history = await self.get_or_create(user_id=user_id, date_id=date_id)
-        history.dropped_at = datetime.utcnow()
-        await self._session.flush()
+        record = await self.get_or_create(user_id, date_id)
+        record.dropped_at = datetime.utcnow()
+        await self._session.commit()
+
+    async def get_like_status(self, user_id: int, date_id: int) -> bool:
+        """Возвращает текущий статус лайка для пары (user_id, date_id).
+
+        Args:
+            user_id: Telegram ID пользователя.
+            date_id: Идентификатор свидания.
+
+        Returns:
+            True если свидание лайкнуто, иначе False.
+        """
+        result = await self._session.execute(
+            select(UserHistory).where(
+                UserHistory.user_id == user_id,
+                UserHistory.date_id == date_id,
+            )
+        )
+        record = result.scalar_one_or_none()
+        return record.is_liked if record else False

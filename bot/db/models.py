@@ -7,15 +7,15 @@ from .base import Base
 
 
 class Date(Base):
-    """Свидание — основная единица контента бота.
+    """Модель свидания.
 
     Attributes:
         id: Первичный ключ.
         description: Текстовое описание свидания.
-        cash: Уровень затрат от 1 (низкий) до 3 (высокий).
-        time: Примерная длительность в часах.
+        cash: Уровень затрат от 1 до 3.
+        time: Длительность в часах.
         is_home: True — дома, False — вне дома.
-        photo_file_id: file_id фотографии, загруженной в Telegram.
+        photo_file_id: Telegram file_id фотографии.
     """
 
     __tablename__ = "dates"
@@ -29,13 +29,13 @@ class Date(Base):
 
 
 class User(Base):
-    """Пользователь Telegram, зарегистрированный в боте.
+    """Модель пользователя Telegram.
 
     Attributes:
-        id: Telegram user_id, используется как первичный ключ.
-        username: Telegram username без символа @, может быть None.
-        registered_at: Дата и время первой регистрации (UTC).
-        is_admin: Признак администратора.
+        id: Telegram user_id, является первичным ключом.
+        username: Telegram-юзернейм, может отсутствовать.
+        registered_at: Дата и время первой регистрации.
+        is_admin: Признак наличия прав администратора.
     """
 
     __tablename__ = "users"
@@ -47,17 +47,16 @@ class User(Base):
 
 
 class UserHistory(Base):
-    """История взаимодействия пользователя со свиданиями.
+    """Модель истории взаимодействий пользователя со свиданиями.
 
-    Хранит факт просмотра, лайк и отметку о посещении.
-    Пара (user_id, date_id) уникальна.
+    Хранит лайки и отметки о посещении. Пара (user_id, date_id) уникальна.
 
     Attributes:
         id: Первичный ключ.
         user_id: FK на пользователя.
         date_id: FK на свидание.
-        is_liked: True, если пользователь поставил лайк.
-        dropped_at: Время, когда свидание было отмечено как посещённое.
+        is_liked: True если пользователь поставил лайк.
+        dropped_at: Дата и время отметки «сходили»; None — ещё не посещено.
     """
 
     __tablename__ = "user_history"

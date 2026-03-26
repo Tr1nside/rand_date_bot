@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "aiogram>=3.26.0",
+    "aiohttp-socks>=0.11.0",
+    "aiosqlite>=0.22.1",
     "loguru>=0.7.3",
     "pre-commit>=4.5.1",
     "pydantic-settings>=2.13.1",

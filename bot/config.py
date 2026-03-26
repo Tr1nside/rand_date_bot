@@ -2,19 +2,22 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Настройки приложения, загружаемые из переменных окружения.
+    """Настройки приложения, загружаемые из .env файла.
 
     Attributes:
         BOT_TOKEN: Токен Telegram-бота.
-        DB_PATH: Путь к файлу SQLite-базы данных.
-        FIRST_ADMIN_ID: Telegram ID первого администратора, создаётся при инициализации БД.
+        FIRST_ADMIN_ID: Telegram ID первого администратора.
+        DB_PATH: Путь к файлу базы данных SQLite.
+        TELEGRAM_PROXY: URL прокси-сервера, например socks5://user:pass@host:port.
     """
 
     BOT_TOKEN: str
-    DB_PATH: str = "bot.db"
     FIRST_ADMIN_ID: int | None = None
+    DB_PATH: str = "bot.db"
+    TELEGRAM_PROXY: str | None = None
 
-    model_config = {"env_file": ".env"}
+    class Config:
+        env_file = ".env"
 
 
 settings = Settings()
