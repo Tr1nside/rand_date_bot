@@ -1,7 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select, func
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Date, User, UserHistory

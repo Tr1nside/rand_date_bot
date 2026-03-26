@@ -32,10 +32,10 @@ async def init_db() -> None:
         async with async_session() as session:
             from sqlalchemy import select
 
-            result = await session.execute(
+            admin_find_result = await session.execute(
                 select(User).where(User.is_admin == True).limit(1)  # noqa: E712
             )
-            existing_admin = result.scalar_one_or_none()
+            existing_admin = admin_find_result.scalar_one_or_none()
 
             if not existing_admin:
                 admin = User(

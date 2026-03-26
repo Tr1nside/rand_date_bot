@@ -41,6 +41,7 @@ async def cmd_list_admins(message: Message, session: AsyncSession) -> None:
 # Добавление администратора
 # ──────────────────────────────────────────────
 
+
 @router.message(Command("add_admin"))
 async def cmd_add_admin(message: Message, state: FSMContext) -> None:
     """Запускает FSM добавления нового администратора.
@@ -58,9 +59,7 @@ async def cmd_add_admin(message: Message, state: FSMContext) -> None:
 
 
 @router.message(AddAdminFSM.telegram_id, F.text)
-async def fsm_add_admin_id(
-    message: Message, state: FSMContext, session: AsyncSession
-) -> None:
+async def fsm_add_admin_id(message: Message, state: FSMContext, session: AsyncSession) -> None:
     """Обрабатывает ввод Telegram ID и назначает пользователя администратором.
 
     Args:
@@ -95,6 +94,7 @@ async def fsm_add_admin_id(
 # Удаление администратора
 # ──────────────────────────────────────────────
 
+
 @router.message(Command("remove_admin"))
 async def cmd_remove_admin(message: Message, state: FSMContext) -> None:
     """Запускает FSM удаления администратора.
@@ -112,9 +112,7 @@ async def cmd_remove_admin(message: Message, state: FSMContext) -> None:
 
 
 @router.message(RemoveAdminFSM.telegram_id, F.text)
-async def fsm_remove_admin_id(
-    message: Message, state: FSMContext, session: AsyncSession
-) -> None:
+async def fsm_remove_admin_id(message: Message, state: FSMContext, session: AsyncSession) -> None:
     """Обрабатывает ввод Telegram ID и снимает права администратора.
 
     Args:
@@ -152,6 +150,7 @@ async def fsm_remove_admin_id(
 # ──────────────────────────────────────────────
 # Отмена FSM
 # ──────────────────────────────────────────────
+
 
 @router.message(AddAdminFSM.telegram_id, F.data == "fsm:cancel")
 @router.message(RemoveAdminFSM.telegram_id, F.data == "fsm:cancel")

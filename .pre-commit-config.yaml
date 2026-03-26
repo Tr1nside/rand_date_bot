@@ -22,3 +22,8 @@ repos:
     hooks:
       - id: markdownlint
         args: [--config, .markdownlint.yaml]
+  - repo: https://github.com/wemake-services/wemake-python-styleguide
+    rev: 1.6.1
+    hooks:
+      - id: wemake-python-styleguide
+        args: [--max-line-length=120, --ignore=WPS115,WPS412,WPS410,WPS111]

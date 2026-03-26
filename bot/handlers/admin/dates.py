@@ -38,6 +38,7 @@ async def cmd_add_date(message: Message, state: FSMContext) -> None:
 # Шаг 1 → 2: описание → бюджет
 # ──────────────────────────────────────────────
 
+
 @router.message(AddDateFSM.description, F.text)
 async def fsm_add_description(message: Message, state: FSMContext) -> None:
     """Сохраняет описание и запрашивает уровень затрат.
@@ -59,6 +60,7 @@ async def fsm_add_description(message: Message, state: FSMContext) -> None:
 # ──────────────────────────────────────────────
 # Шаг 2 → 3: бюджет → время
 # ──────────────────────────────────────────────
+
 
 @router.callback_query(AddDateFSM.cash, F.data.startswith("cash:"))
 async def fsm_add_cash(query: CallbackQuery, state: FSMContext) -> None:
@@ -84,6 +86,7 @@ async def fsm_add_cash(query: CallbackQuery, state: FSMContext) -> None:
 # Шаг 3 → 4: время → локация
 # ──────────────────────────────────────────────
 
+
 @router.callback_query(AddDateFSM.time, F.data.startswith("time:"))
 async def fsm_add_time(query: CallbackQuery, state: FSMContext) -> None:
     """Сохраняет длительность и запрашивает место проведения.
@@ -107,6 +110,7 @@ async def fsm_add_time(query: CallbackQuery, state: FSMContext) -> None:
 # ──────────────────────────────────────────────
 # Шаг 4 → 5: локация → фото
 # ──────────────────────────────────────────────
+
 
 @router.callback_query(AddDateFSM.is_home, F.data.in_({"loc:home", "loc:outside"}))
 async def fsm_add_location(query: CallbackQuery, state: FSMContext) -> None:
@@ -132,10 +136,9 @@ async def fsm_add_location(query: CallbackQuery, state: FSMContext) -> None:
 # Шаг 5: сохранение свидания
 # ──────────────────────────────────────────────
 
+
 @router.message(AddDateFSM.photo, F.photo)
-async def fsm_add_photo(
-    message: Message, state: FSMContext, session: AsyncSession
-) -> None:
+async def fsm_add_photo(message: Message, state: FSMContext, session: AsyncSession) -> None:
     """Сохраняет фото, создаёт свидание в БД и завершает FSM.
 
     Args:
@@ -172,14 +175,13 @@ async def fsm_add_photo(
 # Навигация: Назад / Отмена
 # ──────────────────────────────────────────────
 
+
 @router.callback_query(AddDateFSM.cash, F.data == "fsm:cancel")
 @router.callback_query(AddDateFSM.time, F.data == "fsm:cancel")
 @router.callback_query(AddDateFSM.is_home, F.data == "fsm:cancel")
 @router.callback_query(AddDateFSM.photo, F.data == "fsm:cancel")
 @router.message(AddDateFSM.description, F.data == "fsm:cancel")
-async def fsm_add_cancel(
-    event: Message | CallbackQuery, state: FSMContext
-) -> None:
+async def fsm_add_cancel(event: Message | CallbackQuery, state: FSMContext) -> None:
     """Отменяет добавление свидания и очищает FSM.
 
     Args:

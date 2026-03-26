@@ -69,9 +69,7 @@ def date_card_kb(date_id: int, is_liked: bool) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(text=like_text, callback_data=f"like:{date_id}"),
-                InlineKeyboardButton(
-                    text="✅ Сходили", callback_data=f"visited:{date_id}"
-                ),
+                InlineKeyboardButton(text="✅ Сходили", callback_data=f"visited:{date_id}"),
                 InlineKeyboardButton(text="🔄 Другое", callback_data="next"),
             ]
         ]
