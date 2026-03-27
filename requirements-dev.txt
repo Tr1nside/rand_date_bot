@@ -1,0 +1,9 @@
+aiogram>=3.0
+sqlalchemy>=2.0
+aiosqlite
+pydantic-settings
+python-dotenv
+loguru
+aiohttp-socks
+pre-commit
+ruff
