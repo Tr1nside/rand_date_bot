@@ -41,7 +41,7 @@ class AdminMiddleware(BaseMiddleware):
 
         if not db_user or not db_user.is_admin:
             if hasattr(event, "answer"):
-                await event.answer("⛔ Нет доступа")
+                await event.answer("⛔ Нет доступа")  # pyright: ignore[reportAttributeAccessIssue]
             return
 
         return await handler(event, data)

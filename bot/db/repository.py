@@ -1,9 +1,10 @@
 from datetime import datetime
 
+from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Date, User, UserHistory
+from bot.db.models import Date, User, UserHistory
 
 
 class DateRepository:
@@ -51,8 +52,17 @@ class DateRepository:
             .limit(1)
         )
 
-        result = await self._session.execute(stmt)
-        return result.scalar_one_or_none()
+        execute_result = await self._session.execute(stmt)
+        scalar_result = execute_result.scalar_one_or_none()
+        if scalar_result is None:
+            logger.info(
+                "No date found for user %s (cash=%s, time=%s, is_home=%s)",
+                user_id,
+                cash,
+                time,
+                is_home,
+            )
+        return scalar_result
 
     async def get_by_id(self, date_id: int) -> Date | None:
         """Возвращает свидание по его ID.
@@ -63,8 +73,8 @@ class DateRepository:
         Returns:
             Объект Date или None если не найдено.
         """
-        result = await self._session.execute(select(Date).where(Date.id == date_id))
-        return result.scalar_one_or_none()
+        execute_result = await self._session.execute(select(Date).where(Date.id == date_id))
+        return execute_result.scalar_one_or_none()
 
     async def add(self, date: Date) -> Date:
         """Добавляет новое свидание в базу данных.
@@ -78,6 +88,13 @@ class DateRepository:
         self._session.add(date)
         await self._session.commit()
         await self._session.refresh(date)
+        logger.info(
+            "Date created (id=%s, cash=%s, time=%s, is_home=%s)",
+            date.id,
+            date.cash,
+            date.time,
+            date.is_home,
+        )
         return date
 
 
@@ -97,14 +114,17 @@ class UserRepository:
         Returns:
             Объект User.
         """
-        result = await self._session.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
+        execute_result = await self._session.execute(select(User).where(User.id == user_id))
+        user = execute_result.scalar_one_or_none()
 
         if user is None:
             user = User(id=user_id, username=username)
             self._session.add(user)
             await self._session.commit()
             await self._session.refresh(user)
+            logger.info("New user created: %s (username=%s)", user_id, username)
+        else:
+            logger.debug("User %s fetched from DB", user_id)
 
         return user
 
@@ -117,10 +137,10 @@ class UserRepository:
         Returns:
             Объект User или None если не найден.
         """
-        result = await self._session.execute(select(User).where(User.id == user_id))
-        return result.scalar_one_or_none()
+        execute_result = await self._session.execute(select(User).where(User.id == user_id))
+        return execute_result.scalar_one_or_none()
 
-    async def set_admin(self, user_id: int, value: bool) -> bool:
+    async def set_admin(self, user_id: int, action_value: bool) -> bool:
         """Устанавливает или снимает права администратора.
 
         Args:
@@ -132,17 +152,19 @@ class UserRepository:
         """
         user = await self.get_by_id(user_id)
         if user is None:
+            logger.warning("Attempt to set admin for non-existing user %s", user_id)
             return False
-        user.is_admin = value
+        user.is_admin = action_value
+        logger.info("User %s admin status changed to %s", user_id, action_value)
         await self._session.commit()
         return True
 
     async def get_all_admins(self) -> list[User]:
         """Возвращает список всех администраторов."""
-        result = await self._session.execute(
+        execute_result = await self._session.execute(
             select(User).where(User.is_admin == True)  # noqa: E712
         )
-        return list(result.scalars().all())
+        return list(execute_result.scalars().all())
 
 
 class HistoryRepository:
@@ -161,13 +183,13 @@ class HistoryRepository:
         Returns:
             Объект UserHistory.
         """
-        result = await self._session.execute(
+        execute_result = await self._session.execute(
             select(UserHistory).where(
                 UserHistory.user_id == user_id,
                 UserHistory.date_id == date_id,
             )
         )
-        record = result.scalar_one_or_none()
+        record = execute_result.scalar_one_or_none()
 
         if record is None:
             record = UserHistory(user_id=user_id, date_id=date_id)
@@ -190,6 +212,7 @@ class HistoryRepository:
         record = await self.get_or_create(user_id, date_id)
         record.is_liked = not record.is_liked
         await self._session.commit()
+        logger.info("User %s toggled like for date %s -> %s", user_id, date_id, record.is_liked)
         return record.is_liked
 
     async def mark_visited(self, user_id: int, date_id: int) -> None:
@@ -201,6 +224,7 @@ class HistoryRepository:
         """
         record = await self.get_or_create(user_id, date_id)
         record.dropped_at = datetime.utcnow()
+        logger.info("User %s marked date %s as visited", user_id, date_id)
         await self._session.commit()
 
     async def get_like_status(self, user_id: int, date_id: int) -> bool:
@@ -213,11 +237,11 @@ class HistoryRepository:
         Returns:
             True если свидание лайкнуто, иначе False.
         """
-        result = await self._session.execute(
+        execute_result = await self._session.execute(
             select(UserHistory).where(
                 UserHistory.user_id == user_id,
                 UserHistory.date_id == date_id,
             )
         )
-        record = result.scalar_one_or_none()
+        record = execute_result.scalar_one_or_none()
         return record.is_liked if record else False

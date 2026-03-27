@@ -17,6 +17,8 @@ async def cmd_start(message: Message, session: AsyncSession) -> None:
         message: Входящее сообщение с командой /start.
         session: Асинхронная сессия БД, пробрасываемая через DatabaseMiddleware.
     """
+    if not message.from_user:
+        return
     service = UserService(session)
     await service.register(message.from_user.id, message.from_user.username)
 

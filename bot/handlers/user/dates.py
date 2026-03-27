@@ -21,48 +21,13 @@ router = Router()
 TIME_MAP: dict[str, int] = {"1": 1, "2": 2, "3": 3, "4": 4}
 
 
-async def _send_date_card(
-    query: CallbackQuery,
-    session: AsyncSession,
-    user_id: int,
-    cash: int,
-    time: int,
-    is_home: bool,
-) -> None:
-    """Ищет случайное свидание и отправляет карточку пользователю."""
-    service = DateService(session)
-    date = await service.find_random(user_id, cash, time, is_home)
-
-    if date is None:
-        await query.message.answer(
-            "😔 <b>Ничего не найдено.</b>\n\nПопробуй изменить параметры поиска.",
-            reply_markup=main_menu_kb(),
-            parse_mode="HTML",
-        )
-        return
-
-    is_liked = await service.get_like_status(user_id, date.id)
-    location_text = "🏠 Дома" if date.is_home else "🌆 Вне дома"
-    cash_text = "💸" * date.cash
-
-    caption = f"{date.description}\n\n{location_text} · {cash_text} · ⏱ {date.time} ч"
-
-    await query.message.answer_photo(
-        photo=date.photo_file_id,
-        caption=caption,
-        reply_markup=date_card_kb(date.id, is_liked),
-    )
-
-
 async def _cleanup_and_send(query: CallbackQuery, text: str, **kwargs) -> None:
     """Удаляет предыдущее сообщение и отправляет новое."""
-    # Проверяем, что сообщение доступно для операций
     if query.message and not isinstance(query.message, InaccessibleMessage):
         with suppress(Exception):
             await query.message.delete()
         await query.message.answer(text, **kwargs)
     else:
-        # Фолбэк: если сообщение недоступно, отвечаем на колбэк (эфемерно)
         await query.answer(text, show_alert=True)
 
 
@@ -116,6 +81,8 @@ async def cb_search_location(query: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(SearchFSM.cash, F.data.startswith("cash:"))
 async def cb_search_cash(query: CallbackQuery, state: FSMContext) -> None:
     """Сохраняет выбранный бюджет и переходит к выбору длительности."""
+    if not query.data:
+        return
     cash = int(query.data.split(":")[1])
     await state.update_data(cash=cash)
     await state.set_state(SearchFSM.time)
@@ -137,11 +104,13 @@ async def cb_search_cash(query: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(SearchFSM.time, F.data.startswith("time:"))
 async def cb_search_time(query: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Сохраняет время, завершает сбор фильтров и отображает карточку свидания."""
+    if not query.data or not query.message:
+        return
     time_value = TIME_MAP[query.data.split(":")[1]]
     await state.update_data(time=time_value)
-
     data = await state.get_data()
-    await state.clear()
+
+    await state.set_state(SearchFSM.browsing)
 
     service = DateService(session)
     date = await service.find_random(
@@ -151,7 +120,7 @@ async def cb_search_time(query: CallbackQuery, state: FSMContext, session: Async
     if date is None:
         await _cleanup_and_send(
             query,
-            "😔 <b>Ничего не найдено.</b>\n\nПопробуй изменить параметры поиска.",
+            "😔  <b>Ничего не найдено.</b>\n\nПопробуй изменить параметры поиска.",
             reply_markup=main_menu_kb(),
             parse_mode="HTML",
         )
@@ -163,24 +132,38 @@ async def cb_search_time(query: CallbackQuery, state: FSMContext, session: Async
     cash_text = "💸" * date.cash
     caption = f"{date.description}\n\n{location_text} · {cash_text} · ⏱ {date.time} ч"
 
-    # Удаляем старое сообщение, если доступно
+    # 🔹 Отправляем фото или текст в зависимости от наличия фото
     if query.message and not isinstance(query.message, InaccessibleMessage):
         with suppress(Exception):
             await query.message.delete()
-        await query.message.answer_photo(
-            photo=date.photo_file_id,
-            caption=caption,
-            reply_markup=date_card_kb(date.id, is_liked),
-            parse_mode="HTML",
-        )
+
+        if date.photo_file_id:
+            await query.message.answer_photo(
+                photo=date.photo_file_id,
+                caption=caption,
+                reply_markup=date_card_kb(date.id, is_liked),
+                parse_mode="HTML",
+            )
+        else:
+            await query.message.answer(
+                caption,
+                reply_markup=date_card_kb(date.id, is_liked),
+                parse_mode="HTML",
+            )
     else:
-        # Фолбэк: если сообщение недоступно, отправляем новое
-        await query.message.answer_photo(
-            photo=date.photo_file_id,
-            caption=caption,
-            reply_markup=date_card_kb(date.id, is_liked),
-            parse_mode="HTML",
-        )
+        if date.photo_file_id:
+            await query.message.answer_photo(
+                photo=date.photo_file_id,
+                caption=caption,
+                reply_markup=date_card_kb(date.id, is_liked),
+                parse_mode="HTML",
+            )
+        else:
+            await query.message.answer(
+                caption,
+                reply_markup=date_card_kb(date.id, is_liked),
+                parse_mode="HTML",
+            )
     await query.answer()
 
 
@@ -223,6 +206,8 @@ async def cb_search_back_to_cash(query: CallbackQuery, state: FSMContext) -> Non
 @router.callback_query(F.data.startswith("like:"))
 async def cb_like(query: CallbackQuery, session: AsyncSession) -> None:
     """Переключает лайк на свидании и обновляет клавиатуру карточки."""
+    if not query.data:
+        return
     date_id = int(query.data.split(":")[1])
     service = DateService(session)
     new_is_liked = await service.toggle_like(query.from_user.id, date_id)
@@ -236,6 +221,8 @@ async def cb_like(query: CallbackQuery, session: AsyncSession) -> None:
 @router.callback_query(F.data.startswith("visited:"))
 async def cb_visited(query: CallbackQuery, session: AsyncSession) -> None:
     """Отмечает свидание как посещённое и убирает карточку."""
+    if not query.data:
+        return
     date_id = int(query.data.split(":")[1])
     service = DateService(session)
     await service.mark_visited(query.from_user.id, date_id)
@@ -250,12 +237,11 @@ async def cb_visited(query: CallbackQuery, session: AsyncSession) -> None:
             parse_mode="HTML",
         )
     else:
-        # Фолбэк: если нельзя удалить, просто отвечаем
         await query.answer("✅ Отлично! Надеемся, было здорово 🎉", show_alert=True)
     await query.answer()
 
 
-@router.callback_query(F.data == "next")
+@router.callback_query(SearchFSM.browsing, F.data == "next")
 async def cb_next(query: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Показывает другое свидание с теми же фильтрами."""
     data = await state.get_data()
@@ -278,7 +264,7 @@ async def cb_next(query: CallbackQuery, state: FSMContext, session: AsyncSession
     if date is None:
         await _cleanup_and_send(
             query,
-            "😔 <b>Ничего не найдено.</b>\n\nПопробуй изменить параметры поиска.",
+            "😔  <b>Ничего не найдено.</b>\n\nПопробуй изменить параметры поиска.",
             reply_markup=main_menu_kb(),
             parse_mode="HTML",
         )
@@ -290,18 +276,31 @@ async def cb_next(query: CallbackQuery, state: FSMContext, session: AsyncSession
     cash_text = "💸" * date.cash
     caption = f"{date.description}\n\n{location_text} · {cash_text} · ⏱ {date.time} ч"
 
-    # Редактируем медиа только если сообщение доступно
     if query.message and not isinstance(query.message, InaccessibleMessage):
-        await query.message.edit_message_media(
-            media=InputMediaPhoto(media=date.photo_file_id, caption=caption, parse_mode="HTML"),
-            reply_markup=date_card_kb(date.id, is_liked),
-        )
+        if date.photo_file_id:
+            await query.message.edit_media(
+                media=InputMediaPhoto(media=date.photo_file_id, caption=caption, parse_mode="HTML"),
+                reply_markup=date_card_kb(date.id, is_liked),
+            )
+        else:
+            await query.message.edit_text(
+                text=caption,
+                reply_markup=date_card_kb(date.id, is_liked),
+                parse_mode="HTML",
+            )
     else:
-        # Фолбэк: отправляем новое сообщение с фото
-        await query.message.answer_photo(
-            photo=date.photo_file_id,
-            caption=caption,
-            reply_markup=date_card_kb(date.id, is_liked),
-            parse_mode="HTML",
-        )
+        if date.photo_file_id and query.message:
+            await query.message.answer_photo(
+                photo=date.photo_file_id,
+                caption=caption,
+                reply_markup=date_card_kb(date.id, is_liked),
+                parse_mode="HTML",
+            )
+        else:
+            if query.message:
+                await query.message.answer(
+                    caption,
+                    reply_markup=date_card_kb(date.id, is_liked),
+                    parse_mode="HTML",
+                )
     await query.answer()

@@ -9,7 +9,7 @@ from loguru import logger
 
 from bot.config import settings
 from bot.db.base import init_db
-from bot.handlers import register_all_routers
+from bot.handlers.register import register_all_routers
 from bot.middlewares.database import DatabaseMiddleware
 
 

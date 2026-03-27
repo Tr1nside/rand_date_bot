@@ -2,6 +2,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.keyboards.admin import admin_fsm_nav_kb
@@ -19,10 +20,13 @@ async def cmd_list_admins(message: Message, session: AsyncSession) -> None:
         message: Входящее сообщение с командой /list_admins.
         session: Асинхронная сессия БД.
     """
+    if message.from_user:
+        logger.info("User %s requested admin list", message.from_user.id)
     service = UserService(session)
     admins = await service.list_admins()
 
     if not admins:
+        logger.warning("Admin list requested but no admins found")
         await message.answer("Администраторов пока нет.")
         return
 
@@ -50,6 +54,8 @@ async def cmd_add_admin(message: Message, state: FSMContext) -> None:
         message: Входящее сообщение с командой /add_admin.
         state: FSM-контекст.
     """
+    if message.from_user:
+        logger.info("User %s started add_admin FSM", message.from_user.id)
     await state.set_state(AddAdminFSM.telegram_id)
     await message.answer(
         "👤 Введите <b>Telegram ID</b> нового администратора:",
@@ -67,11 +73,20 @@ async def fsm_add_admin_id(message: Message, state: FSMContext, session: AsyncSe
         state: FSM-контекст.
         session: Асинхронная сессия БД.
     """
+    if message.from_user is None:
+        logger.warning("User data in message is None")
+        return
+    if message.text is None:
+        await message.answer("⚠️ Введите корректный числовой Telegram ID.")
+        return
     if not message.text.strip().lstrip("-").isdigit():
+        logger.warning("User %s entered invalid admin ID: %s", message.from_user.id, message.text)
         await message.answer("⚠️ Введите корректный числовой Telegram ID.")
         return
 
     target_id = int(message.text.strip())
+
+    logger.info("User %s attempting to add admin %s", message.from_user.id, target_id)
     await state.clear()
 
     service = UserService(session)
@@ -83,6 +98,9 @@ async def fsm_add_admin_id(message: Message, state: FSMContext, session: AsyncSe
             parse_mode="HTML",
         )
     else:
+        logger.warning(
+            "User %s tried to add non-existing user %s as admin", message.from_user.id, target_id
+        )
         await message.answer(
             f"⚠️ Пользователь <code>{target_id}</code> не найден в базе.\n"
             "Он должен сначала написать /start боту.",
@@ -103,6 +121,8 @@ async def cmd_remove_admin(message: Message, state: FSMContext) -> None:
         message: Входящее сообщение с командой /remove_admin.
         state: FSM-контекст.
     """
+    if message.from_user:
+        logger.info("User %s started remove_admin FSM", message.from_user.id)
     await state.set_state(RemoveAdminFSM.telegram_id)
     await message.answer(
         "👤 Введите <b>Telegram ID</b> администратора для удаления:",
@@ -120,27 +140,44 @@ async def fsm_remove_admin_id(message: Message, state: FSMContext, session: Asyn
         state: FSM-контекст.
         session: Асинхронная сессия БД.
     """
+
+    if message.from_user is None:
+        logger.warning("User data in message is None")
+        return
+    if message.text is None:
+        await message.answer("⚠️ Введите корректный числовой Telegram ID.")
+        return
     if not message.text.strip().lstrip("-").isdigit():
+        logger.warning(
+            "User %s entered invalid admin ID for removal: %s", message.from_user.id, message.text
+        )
         await message.answer("⚠️ Введите корректный числовой Telegram ID.")
         return
 
     target_id = int(message.text.strip())
-
-    if target_id == message.from_user.id:
+    if message.from_user and target_id == message.from_user.id:
+        logger.warning(
+            "User %s попытался снять права администратора у самого себя", message.from_user.id
+        )
         await message.answer("⚠️ Нельзя снять права администратора у самого себя.")
         return
 
     await state.clear()
 
     service = UserService(session)
+    logger.info("User %s attempting to remove admin %s", message.from_user.id, target_id)
     success = await service.remove_admin(target_id)
 
     if success:
+        logger.info("User %s removed admin %s", message.from_user.id, target_id)
         await message.answer(
             f"✅ Права администратора у <code>{target_id}</code> сняты.",
             parse_mode="HTML",
         )
     else:
+        logger.warning(
+            "User %s tried to remove non-existing admin %s", message.from_user.id, target_id
+        )
         await message.answer(
             f"⚠️ Пользователь <code>{target_id}</code> не найден в базе.",
             parse_mode="HTML",
@@ -161,5 +198,7 @@ async def fsm_admin_cancel(message: Message, state: FSMContext) -> None:
         message: Входящее сообщение с командой отмены.
         state: FSM-контекст.
     """
+    if message.from_user:
+        logger.info("User %s canceled admin FSM", message.from_user.id)
     await state.clear()
     await message.answer("❌ Операция отменена.")

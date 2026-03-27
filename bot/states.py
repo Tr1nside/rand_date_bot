@@ -2,11 +2,10 @@ from aiogram.fsm.state import State, StatesGroup
 
 
 class SearchFSM(StatesGroup):
-    """FSM для пошагового поиска свидания пользователем."""
-
     is_home = State()
     cash = State()
     time = State()
+    browsing = State()
 
 
 class AddDateFSM(StatesGroup):

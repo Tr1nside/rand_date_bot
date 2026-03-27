@@ -2,6 +2,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, PhotoSize
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.keyboards.admin import (
@@ -26,6 +27,8 @@ async def cmd_add_date(message: Message, state: FSMContext) -> None:
         message: Входящее сообщение с командой /add_date.
         state: FSM-контекст.
     """
+    if message.from_user:
+        logger.info("User %s started add_date FSM", message.from_user.id)
     await state.set_state(AddDateFSM.description)
     await message.answer(
         "📝 <b>[1/5] Введите описание свидания:</b>",
@@ -70,6 +73,8 @@ async def fsm_add_cash(query: CallbackQuery, state: FSMContext) -> None:
         query: Callback-запрос с уровнем затрат.
         state: FSM-контекст.
     """
+    if not query.data or not query.message:
+        return
     cash = int(query.data.split(":")[1])
     await state.update_data(cash=cash)
     await state.set_state(AddDateFSM.time)
@@ -95,6 +100,8 @@ async def fsm_add_time(query: CallbackQuery, state: FSMContext) -> None:
         query: Callback-запрос с длительностью.
         state: FSM-контекст.
     """
+    if not query.data or not query.message:
+        return
     time_value = TIME_MAP[query.data.split(":")[1]]
     await state.update_data(time=time_value)
     await state.set_state(AddDateFSM.is_home)
@@ -120,6 +127,8 @@ async def fsm_add_location(query: CallbackQuery, state: FSMContext) -> None:
         query: Callback-запрос с выбором локации.
         state: FSM-контекст.
     """
+    if not query.data or not query.message:
+        return
     is_home = query.data == "loc:home"
     await state.update_data(is_home=is_home)
     await state.set_state(AddDateFSM.photo)
@@ -146,6 +155,8 @@ async def fsm_add_photo(message: Message, state: FSMContext, session: AsyncSessi
         state: FSM-контекст с собранными данными.
         session: Асинхронная сессия БД.
     """
+    if not message.photo:
+        return
     photo: PhotoSize = message.photo[-1]
     data = await state.get_data()
     await state.clear()
@@ -190,6 +201,8 @@ async def fsm_add_cancel(event: Message | CallbackQuery, state: FSMContext) -> N
     """
     await state.clear()
     msg = event if isinstance(event, Message) else event.message
+    if not msg:
+        return
     await msg.answer("❌ Добавление свидания отменено.")
     if isinstance(event, CallbackQuery):
         await event.answer()
@@ -203,6 +216,8 @@ async def fsm_back_to_description(query: CallbackQuery, state: FSMContext) -> No
         query: Callback-запрос.
         state: FSM-контекст.
     """
+    if not query.message:
+        return
     await state.set_state(AddDateFSM.cash)
     await query.message.answer(
         "💰 <b>[2/5] Укажите уровень затрат:</b>",
@@ -220,6 +235,8 @@ async def fsm_back_to_cash(query: CallbackQuery, state: FSMContext) -> None:
         query: Callback-запрос.
         state: FSM-контекст.
     """
+    if not query.message:
+        return
     await state.set_state(AddDateFSM.time)
     await query.message.answer(
         "⏱ <b>[3/5] Сколько часов займёт?</b>",
@@ -237,6 +254,8 @@ async def fsm_back_to_location(query: CallbackQuery, state: FSMContext) -> None:
         query: Callback-запрос.
         state: FSM-контекст.
     """
+    if not query.message:
+        return
     await state.set_state(AddDateFSM.is_home)
     await query.message.answer(
         "🗺 <b>[4/5] Где проходит свидание?</b>",
