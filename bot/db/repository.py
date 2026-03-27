@@ -56,7 +56,7 @@ class DateRepository:
         scalar_result = execute_result.scalar_one_or_none()
         if scalar_result is None:
             logger.info(
-                "No date found for user %s (cash=%s, time=%s, is_home=%s)",
+                "No date found for user {} (cash={}, time={}, is_home={})",
                 user_id,
                 cash,
                 time,
@@ -89,7 +89,7 @@ class DateRepository:
         await self._session.commit()
         await self._session.refresh(date)
         logger.info(
-            "Date created (id=%s, cash=%s, time=%s, is_home=%s)",
+            "Date created (id={}, cash={}, time={}, is_home={})",
             date.id,
             date.cash,
             date.time,
@@ -122,9 +122,9 @@ class UserRepository:
             self._session.add(user)
             await self._session.commit()
             await self._session.refresh(user)
-            logger.info("New user created: %s (username=%s)", user_id, username)
+            logger.info("New user created: {} (username={})", user_id, username)
         else:
-            logger.debug("User %s fetched from DB", user_id)
+            logger.debug("User {} fetched from DB", user_id)
 
         return user
 
@@ -152,10 +152,10 @@ class UserRepository:
         """
         user = await self.get_by_id(user_id)
         if user is None:
-            logger.warning("Attempt to set admin for non-existing user %s", user_id)
+            logger.warning("Attempt to set admin for non-existing user {}", user_id)
             return False
         user.is_admin = action_value
-        logger.info("User %s admin status changed to %s", user_id, action_value)
+        logger.info("User {} admin status changed to {}", user_id, action_value)
         await self._session.commit()
         return True
 
@@ -212,7 +212,7 @@ class HistoryRepository:
         record = await self.get_or_create(user_id, date_id)
         record.is_liked = not record.is_liked
         await self._session.commit()
-        logger.info("User %s toggled like for date %s -> %s", user_id, date_id, record.is_liked)
+        logger.info("User {} toggled like for date {} -> {}", user_id, date_id, record.is_liked)
         return record.is_liked
 
     async def mark_visited(self, user_id: int, date_id: int) -> None:
@@ -224,7 +224,7 @@ class HistoryRepository:
         """
         record = await self.get_or_create(user_id, date_id)
         record.dropped_at = datetime.utcnow()
-        logger.info("User %s marked date %s as visited", user_id, date_id)
+        logger.info("User {} marked date {} as visited", user_id, date_id)
         await self._session.commit()
 
     async def get_like_status(self, user_id: int, date_id: int) -> bool:

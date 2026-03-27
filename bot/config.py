@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from loguru import logger
 from pydantic_settings import BaseSettings
 
 
@@ -18,6 +21,20 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+
+
+LOG_PATH = Path(__file__).parent.parent / "logs" / "recent.log"
+LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+LOG_PATH.touch()
+
+logger.add(
+    LOG_PATH,
+    level=5,
+    rotation="500 MB",
+    retention="1 week",
+    compression="zip",
+    enqueue=True,
+)
 
 
 settings = Settings()  # type: ignore

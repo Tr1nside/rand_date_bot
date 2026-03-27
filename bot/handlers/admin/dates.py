@@ -28,7 +28,7 @@ async def cmd_add_date(message: Message, state: FSMContext) -> None:
         state: FSM-контекст.
     """
     if message.from_user:
-        logger.info("User %s started add_date FSM", message.from_user.id)
+        logger.info("User {} started add_date FSM", message.from_user.id)
     await state.set_state(AddDateFSM.description)
     await message.answer(
         "📝 <b>[1/5] Введите описание свидания:</b>",
