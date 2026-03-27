@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
 from loguru import logger
 
 from bot.config import settings
@@ -38,14 +38,24 @@ async def set_bot_commands(bot: Bot) -> None:
     Args:
         bot: Экземпляр бота aiogram.
     """
-    commands = [
-        BotCommand(command="start", description="Запустить бота"),
-        BotCommand(command="add_date", description="Добавить свидание (админ)"),
-        BotCommand(command="add_admin", description="Добавить администратора (админ)"),
-        BotCommand(command="remove_admin", description="Удалить администратора (админ)"),
-        BotCommand(command="list_admins", description="Список администраторов (админ)"),
-    ]
-    await bot.set_my_commands(commands)
+    await bot.set_my_commands(
+        commands=[
+            BotCommand(command="start", description="Запустить бота"),
+            BotCommand(command="help", description="Помощь"),
+        ],
+        scope=BotCommandScopeDefault(),
+    )
+
+    if settings.FIRST_ADMIN_ID:
+        await bot.set_my_commands(
+            commands=[
+                BotCommand(command="add_date", description="Добавить свидание (админ)"),
+                BotCommand(command="add_admin", description="Добавить администратора (админ)"),
+                BotCommand(command="remove_admin", description="Удалить администратора (админ)"),
+                BotCommand(command="list_admins", description="Список администраторов (админ)"),
+            ],
+            scope=BotCommandScopeChat(chat_id=settings.FIRST_ADMIN_ID),
+        )
 
 
 async def on_startup(bot: Bot) -> None:

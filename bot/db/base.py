@@ -8,7 +8,7 @@ engine = create_async_engine(
     f"sqlite+aiosqlite:///{settings.DB_PATH}",
     echo=False,
 )
-logger.info("Initializing database engine with SQLite at %s", settings.DB_PATH)
+logger.info("Initializing database engine with SQLite at {}", settings.DB_PATH)
 
 async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
@@ -37,7 +37,7 @@ async def init_db() -> None:
         raise
 
     if settings.FIRST_ADMIN_ID:
-        logger.debug("FIRST_ADMIN_ID is set: %s", settings.FIRST_ADMIN_ID)
+        logger.debug("FIRST_ADMIN_ID is set: {}", settings.FIRST_ADMIN_ID)
         async with async_session() as session:
             from sqlalchemy import select
 
@@ -48,7 +48,7 @@ async def init_db() -> None:
 
             if not existing_admin:
                 logger.info(
-                    "No admin found. Creating initial admin with id %s", settings.FIRST_ADMIN_ID
+                    "No admin found. Creating initial admin with id {}", settings.FIRST_ADMIN_ID
                 )
                 admin = User(
                     id=settings.FIRST_ADMIN_ID,

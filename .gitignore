@@ -17,3 +17,6 @@ __pycache__/
 
 *.db
 *.sqlite
+
+*.log
+logs/

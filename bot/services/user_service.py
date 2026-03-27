@@ -1,3 +1,4 @@
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.models import User
@@ -43,7 +44,17 @@ class UserService:
         Returns:
             True если пользователь найден и обновлён, False если не найден.
         """
-        return await self.users.set_admin(user_id, True)
+        user = await self.users.get_by_id(user_id)
+        if not user:
+            logger.warning("Attempted to change admin rights for non-existent user {}", user_id)
+            return False
+
+        result = await self.users.set_admin(user_id, True)
+        if result:
+            logger.info("User {} granted admin rights", user_id)
+        else:
+            logger.warning("Failed to grant admin rights: user {} not found", user_id)
+        return result
 
     async def remove_admin(self, user_id: int) -> bool:
         """Снимает с пользователя права администратора.
@@ -54,7 +65,16 @@ class UserService:
         Returns:
             True если пользователь найден и обновлён, False если не найден.
         """
-        return await self.users.set_admin(user_id, False)
+        user = await self.users.get_by_id(user_id)
+        if not user:
+            logger.warning("Attempted to change admin rights for non-existent user {}", user_id)
+            return False
+        result = await self.users.set_admin(user_id, False)
+        if result:
+            logger.info("User {} have been revoked admin rights", user_id)
+        else:
+            logger.warning("Failed to revoked admin rights: user {} not found", user_id)
+        return result
 
     async def list_admins(self) -> list[User]:
         """Возвращает список всех администраторов."""

@@ -3,6 +3,7 @@ from typing import Any
 
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.repository import UserRepository
@@ -35,13 +36,18 @@ class AdminMiddleware(BaseMiddleware):
         session: AsyncSession = data["session"]
 
         if user is None:
+            logger.warning("AdminMiddleware: event without user")
             return
 
+        logger.debug("AdminMiddleware: checking admin for user_id={}", user.id)
         db_user = await UserRepository(session).get_by_id(user.id)
 
         if not db_user or not db_user.is_admin:
-            if hasattr(event, "answer"):
-                await event.answer("⛔ Нет доступа")  # pyright: ignore[reportAttributeAccessIssue]
-            return
+            logger.warning(
+                "Admin access denied: user_id={}, is_admin={}",
+                user.id,
+                getattr(db_user, "is_admin", None),
+            )
 
+        logger.debug("Admin access granted: user_id={}", user.id)
         return await handler(event, data)

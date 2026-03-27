@@ -3,6 +3,7 @@ from contextlib import suppress
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InaccessibleMessage, InputMediaPhoto
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.keyboards.user import (
@@ -25,7 +26,10 @@ async def _cleanup_and_send(query: CallbackQuery, text: str, **kwargs) -> None:
     """Удаляет предыдущее сообщение и отправляет новое."""
     if query.message and not isinstance(query.message, InaccessibleMessage):
         with suppress(Exception):
-            await query.message.delete()
+            try:
+                await query.message.delete()
+            except Exception as e:
+                logger.debug("Failed to delete message: {}", e)
         await query.message.answer(text, **kwargs)
     else:
         await query.answer(text, show_alert=True)
@@ -40,6 +44,10 @@ async def _cleanup_and_send(query: CallbackQuery, text: str, **kwargs) -> None:
 async def cb_search_start(query: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     """Начинает сценарий поиска: регистрирует пользователя и показывает выбор локации."""
     service = UserService(session)
+
+    logger.info(
+        "User {} started search FSM (username={})", query.from_user.id, query.from_user.username
+    )
     await service.register(query.from_user.id, query.from_user.username)
 
     await state.set_state(SearchFSM.is_home)
@@ -61,6 +69,9 @@ async def cb_search_start(query: CallbackQuery, state: FSMContext, session: Asyn
 async def cb_search_location(query: CallbackQuery, state: FSMContext) -> None:
     """Сохраняет выбранную локацию и переходит к выбору бюджета."""
     is_home = query.data == "loc:home"
+    logger.debug(
+        "User {} selected location: {}", query.from_user.id, "home" if is_home else "outside"
+    )
     await state.update_data(is_home=is_home)
     await state.set_state(SearchFSM.cash)
 
@@ -84,6 +95,7 @@ async def cb_search_cash(query: CallbackQuery, state: FSMContext) -> None:
     if not query.data:
         return
     cash = int(query.data.split(":")[1])
+    logger.debug("User {} selected cash: {}", query.from_user.id, cash)
     await state.update_data(cash=cash)
     await state.set_state(SearchFSM.time)
 
@@ -107,17 +119,36 @@ async def cb_search_time(query: CallbackQuery, state: FSMContext, session: Async
     if not query.data or not query.message:
         return
     time_value = TIME_MAP[query.data.split(":")[1]]
+    logger.debug("User {} selected time: {}", query.from_user.id, time_value)
     await state.update_data(time=time_value)
     data = await state.get_data()
 
     await state.set_state(SearchFSM.browsing)
 
     service = DateService(session)
-    date = await service.find_random(
-        query.from_user.id, data["cash"], data["time"], data["is_home"]
+    logger.info(
+        "User {} searching date (cash={}, time={}, is_home={})",
+        query.from_user.id,
+        data["cash"],
+        data["time"],
+        data["is_home"],
     )
+    try:
+        date = await service.find_random(
+            query.from_user.id, data["cash"], data["time"], data["is_home"]
+        )
+    except Exception:
+        logger.exception("Search failed for user {}", query.from_user.id)
+        raise
 
     if date is None:
+        logger.info(
+            "No date found for user {} (cash={}, time={}, is_home={})",
+            query.from_user.id,
+            data["cash"],
+            data["time"],
+            data["is_home"],
+        )
         await _cleanup_and_send(
             query,
             "😔  <b>Ничего не найдено.</b>\n\nПопробуй изменить параметры поиска.",
@@ -127,6 +158,7 @@ async def cb_search_time(query: CallbackQuery, state: FSMContext, session: Async
         await query.answer()
         return
 
+    logger.info("User {} received date {}", query.from_user.id, date.id)
     is_liked = await service.get_like_status(query.from_user.id, date.id)
     location_text = "🏠 Дома" if date.is_home else "🌆 Вне дома"
     cash_text = "💸" * date.cash
@@ -211,6 +243,7 @@ async def cb_like(query: CallbackQuery, session: AsyncSession) -> None:
     date_id = int(query.data.split(":")[1])
     service = DateService(session)
     new_is_liked = await service.toggle_like(query.from_user.id, date_id)
+    logger.info("User {} toggled like for date {} -> {}", query.from_user.id, date_id, new_is_liked)
 
     # Редактируем клавиатуру только если сообщение доступно
     if query.message and not isinstance(query.message, InaccessibleMessage):
@@ -226,6 +259,7 @@ async def cb_visited(query: CallbackQuery, session: AsyncSession) -> None:
     date_id = int(query.data.split(":")[1])
     service = DateService(session)
     await service.mark_visited(query.from_user.id, date_id)
+    logger.info("User {} marked date {} as visited", query.from_user.id, date_id)
 
     # Удаляем карточку, если сообщение доступно
     if query.message and not isinstance(query.message, InaccessibleMessage):
@@ -248,8 +282,16 @@ async def cb_next(query: CallbackQuery, state: FSMContext, session: AsyncSession
     cash = data.get("cash")
     time = data.get("time")
     is_home = data.get("is_home")
+    logger.debug(
+        "User {} requested next date (cash={}, time={}, is_home={})",
+        query.from_user.id,
+        cash,
+        time,
+        is_home,
+    )
 
     if cash is None or time is None or is_home is None:
+        logger.warning("User {} lost FSM filters in browsing", query.from_user.id)
         await _cleanup_and_send(
             query,
             "Фильтры устарели. Начни поиск заново 👇",
@@ -259,9 +301,21 @@ async def cb_next(query: CallbackQuery, state: FSMContext, session: AsyncSession
         return
 
     service = DateService(session)
-    date = await service.find_random(query.from_user.id, cash, time, is_home)
+
+    try:
+        date = await service.find_random(query.from_user.id, cash, time, is_home)
+    except Exception:
+        logger.exception("Search failed for user {}", query.from_user.id)
+        raise
 
     if date is None:
+        logger.info(
+            "No more dates for user {} (cash={}, time={}, is_home={})",
+            query.from_user.id,
+            cash,
+            time,
+            is_home,
+        )
         await _cleanup_and_send(
             query,
             "😔  <b>Ничего не найдено.</b>\n\nПопробуй изменить параметры поиска.",

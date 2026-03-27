@@ -1,3 +1,4 @@
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.models import Date
@@ -54,7 +55,15 @@ class DateService:
         Returns:
             Новое значение is_liked после переключения.
         """
-        return await self.history.toggle_like(user_id, date_id)
+        new_status = await self.history.toggle_like(user_id, date_id)
+
+        logger.info(
+            "User {} toggled like on date {} → {}",
+            user_id,
+            date_id,
+            "liked" if new_status else "unliked",
+        )
+        return new_status
 
     async def mark_visited(self, user_id: int, date_id: int) -> None:
         """Отмечает свидание как посещённое пользователем.
@@ -97,6 +106,10 @@ class DateService:
         Returns:
             Созданный объект Date с присвоенным ID.
         """
+        if cash not in (1, 2, 3):
+            raise ValueError(f"Invalid cash: {cash}")
+        if time < 1:
+            raise ValueError(f"Invalid time: {time}")
         date = Date(
             description=description,
             cash=cash,
@@ -104,4 +117,10 @@ class DateService:
             is_home=is_home,
             photo_file_id=photo_file_id,
         )
-        return await self.dates.add(date)
+        try:
+            saved_date = await self.dates.add(date)
+            logger.info("New date added: id={}, desc={}", saved_date.id, description)
+            return saved_date
+        except Exception as _:
+            logger.exception("Failed to add date: {}", description)
+            raise
