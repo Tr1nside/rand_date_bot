@@ -1,3 +1,5 @@
+from typing import Final
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -13,7 +15,7 @@ from bot.states import AddAdminFSM, RemoveAdminFSM
 router = Router()
 
 MAX_DESCRIPTION_LENGTH = 45
-CASH_LABELS = {1: "💸", 2: "💸💸", 3: "💸💸💸"}
+CASH_LABELS: Final[dict[int, str]] = {1: "💸", 2: "💸💸", 3: "💸💸💸"}
 
 
 def _truncate_description(text: str) -> str:
