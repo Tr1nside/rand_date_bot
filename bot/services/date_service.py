@@ -162,21 +162,35 @@ class DateService:
     async def get_stats(self) -> BotStats:
         """Собирает и возвращает агрегированную статистику бота.
 
-        Выполняет параллельные запросы к StatsRepository и собирает
-        результаты в единый DTO.
+        Последовательно запрашивает все срезы из StatsRepository
+        и собирает результаты в единый DTO.
 
         Returns:
             BotStats со всеми разделами статистики.
+
+        Raises:
+            Exception: Пробрасывает любое исключение из репозитория после логирования.
         """
-        filter_stats = await self.stats.get_dates_count_by_filter()
-        return BotStats(
-            total_dates=await self.stats.get_total_dates(),
-            top_liked=await self.stats.get_top_liked(),
-            top_visited=await self.stats.get_top_visited(),
-            home_count=filter_stats["home_count"],
-            outside_count=filter_stats["outside_count"],
-            cash_breakdown=filter_stats["cash_breakdown"],
-            total_users=await self.stats.get_users_total(),
-            active_users=await self.stats.get_active_users_count(),
-            admins_count=await self.stats.get_admins_count(),
-        )
+        logger.info("Collecting bot stats")
+        try:
+            filter_stats = await self.stats.get_dates_count_by_filter()
+            result = BotStats(
+                total_dates=await self.stats.get_total_dates(),
+                top_liked=await self.stats.get_top_liked(),
+                top_visited=await self.stats.get_top_visited(),
+                home_count=filter_stats["home_count"],
+                outside_count=filter_stats["outside_count"],
+                cash_breakdown=filter_stats["cash_breakdown"],
+                total_users=await self.stats.get_users_total(),
+                active_users=await self.stats.get_active_users_count(),
+                admins_count=await self.stats.get_admins_count(),
+            )
+            logger.info(
+                "Stats collected: dates={}, users={}",
+                result["total_dates"],
+                result["total_users"],
+            )
+            return result
+        except Exception:
+            logger.exception("Failed to collect bot stats")
+            raise

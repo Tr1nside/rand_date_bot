@@ -278,7 +278,9 @@ class StatsRepository:
     async def get_total_dates(self) -> int:
         """Возвращает общее количество свиданий в базе."""
         result = await self._session.execute(select(func.count(Date.id)))
-        return result.scalar_one()
+        total = result.scalar_one()
+        logger.debug("Total dates in DB: {}", total)
+        return total
 
     async def get_top_liked(
         self,
@@ -302,7 +304,12 @@ class StatsRepository:
             .limit(limit)
         )
         result = await self._session.execute(stmt)
-        return [(date, count) for date, count in result.all()]
+        rows = [(date, count) for date, count in result.all()]
+        if not rows:
+            logger.warning("get_top_liked returned no rows — no likes in DB yet")
+        else:
+            logger.debug("get_top_liked: {} rows returned", len(rows))
+        return rows
 
     async def get_top_visited(
         self,
@@ -326,7 +333,12 @@ class StatsRepository:
             .limit(limit)
         )
         result = await self._session.execute(stmt)
-        return [(date, count) for date, count in result.all()]
+        rows = [(date, count) for date, count in result.all()]
+        if not rows:
+            logger.warning("get_top_visited returned no rows — no visits in DB yet")
+        else:
+            logger.debug("get_top_visited: {} rows returned", len(rows))
+        return rows
 
     async def get_dates_count_by_filter(self) -> DateFilterStats:
         """Возвращает разбивку свиданий по месту и уровню бюджета.
@@ -348,6 +360,12 @@ class StatsRepository:
         for level, cnt in cash_result.all():
             cash_breakdown[level] = cnt
 
+        logger.debug(
+            "Filter breakdown: home={}, outside={}, cash={}",
+            home_count,
+            outside_count,
+            cash_breakdown,
+        )
         return DateFilterStats(
             home_count=home_count,
             outside_count=outside_count,
@@ -357,7 +375,9 @@ class StatsRepository:
     async def get_users_total(self) -> int:
         """Возвращает общее количество зарегистрированных пользователей."""
         result = await self._session.execute(select(func.count(User.id)))
-        return result.scalar_one()
+        total = result.scalar_one()
+        logger.debug("Total users in DB: {}", total)
+        return total
 
     async def get_active_users_count(self) -> int:
         """Возвращает количество пользователей хотя бы с одним посещением."""
@@ -368,11 +388,15 @@ class StatsRepository:
             .subquery()
         )
         result = await self._session.execute(select(func.count()).select_from(subq))
-        return result.scalar_one()
+        active = result.scalar_one()
+        logger.debug("Active users (>=1 visit): {}", active)
+        return active
 
     async def get_admins_count(self) -> int:
         """Возвращает количество администраторов."""
         result = await self._session.execute(
             select(func.count(User.id)).where(User.is_admin.is_(True))
         )
-        return result.scalar_one()
+        count = result.scalar_one()
+        logger.debug("Admins count: {}", count)
+        return count

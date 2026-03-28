@@ -96,7 +96,14 @@ async def cmd_stats(message: Message, session: AsyncSession) -> None:
         logger.info("User {} requested bot stats", message.from_user.id)
 
     service = DateService(session)
-    stats = await service.get_stats()
+    try:
+        stats = await service.get_stats()
+    except Exception as exc:
+        logger.exception(
+            "Failed to fetch stats for user {}: {}", message.from_user and message.from_user.id, exc
+        )
+        await message.answer("⚠️ Не удалось получить статистику. Попробуйте позже.")
+        return
 
     await message.answer(_format_stats_message(stats), parse_mode="HTML")
 
