@@ -40,13 +40,13 @@ python main.py
 
 ## Структура проекта
 
-Подробно — в [`docs/Architecture.md`](docs/Architecture.md).
+Подробно — в [`Architecture.md`](Architecture.md).
 
 ---
 
 ## Соглашения по коду
 
-Подробно — в [`docs/Ai.md`](docs/Ai.md). Кратко:
+Подробно — в [`AI.md`](AI.md). Кратко:
 
 - Линтер: `ruff` + WPS (`wemake-python-styleguide`). Нарушения WPS — блокируют коммит.
 - Типы аннотируются везде. Используй `X | None` вместо `Optional[X]`.

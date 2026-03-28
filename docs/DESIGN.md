@@ -19,6 +19,15 @@
 | Линтер | `ruff` + `WPS` |
 | Форматирование | `pre-commit` + `markdownlint` |
 
+`.env` переменные:
+
+| Переменная | Обязательная | Описание |
+| --- | --- | --- |
+| `BOT_TOKEN` | ✅ | Токен Telegram-бота |
+| `FIRST_ADMIN_ID` | ❌ | Telegram ID первого администратора; создаётся автоматически, если задан и нет в БД |
+| `DB_PATH` | ❌ | Путь к файлу SQLite (по умолчанию `bot.db`) |
+| `TELEGRAM_PROXY` | ❌ | URL прокси-сервера, например `socks5://user:pass@host:port` |
+
 ---
 
 ## Структура проекта
@@ -33,13 +42,14 @@ bot/
 │       ├── dates.py       # добавление свидания (FSM)
 │       └── admins.py      # управление админами
 ├── middlewares/
-│   └── admin_check.py     # проверка is_admin из БД
+│   ├── admin.py           # проверка is_admin из БД
+│   └── database.py        # открытие сессии на каждый апдейт
 ├── keyboards/
 │   ├── user.py
 │   └── admin.py
 ├── services/
-│   ├── dates.py           # логика выборки рандомного свидания
-│   └── users.py
+│   ├── date_service.py    # логика выборки рандомного свидания
+│   └── user_service.py
 ├── db/
 │   ├── models.py
 │   └── repository.py      # все SQL-запросы, хендлеры не знают про SQL
@@ -171,7 +181,16 @@ class AddDateFSM(StatesGroup):
     is_home     = State()
     photo       = State()
 
+class SearchFSM(StatesGroup):
+    is_home   = State()
+    cash      = State()
+    time      = State()
+    browsing  = State()   # активен пока пользователь листает карточки
+
 class AddAdminFSM(StatesGroup):
+    telegram_id = State()
+
+class RemoveAdminFSM(StatesGroup):
     telegram_id = State()
 ```
 
@@ -179,8 +198,10 @@ class AddAdminFSM(StatesGroup):
 
 ## Middleware
 
-`AdminCheckMiddleware` — перед каждым апдейтом для admin-хендлеров проверяет `users.is_admin` в БД.
-    Если не админ — игнорирует или отвечает «Нет доступа».
+`AdminMiddleware` — перед каждым апдейтом для admin-хендлеров проверяет `users.is_admin` в БД.
+Если не админ — отвечает «Нет доступа» и **не передаёт** управление хендлеру.
+
+`DatabaseMiddleware` — открывает `AsyncSession` на каждый апдейт, кладёт в `data["session"]`, закрывает после обработки.
 
 ---
 

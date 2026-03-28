@@ -25,35 +25,36 @@ bot/
 ├── states.py                # все FSM StatesGroup в одном файле
 │
 ├── db/
-│   ├── __init__.py
-│   ├── base.py              # engine, async_session factory, Base
+│   ├── __init__.py          ← всегда пустой
+│   ├── base.py              # engine, async_session factory, Base, init_db
 │   ├── models.py            # SQLAlchemy модели
 │   └── repository.py        # все методы работы с БД
 │
 ├── services/
-│   ├── __init__.py
+│   ├── __init__.py          ← всегда пустой
 │   ├── date_service.py      # логика: найти рандомное, лайкнуть, отметить посещённым
 │   └── user_service.py      # регистрация юзера, проверка/управление админами
 │
 ├── handlers/
-│   ├── __init__.py          # регистрирует все роутеры
+│   ├── __init__.py          ← всегда пустой
 │   ├── user/
-│   │   ├── __init__.py
+│   │   ├── __init__.py      ← всегда пустой
 │   │   ├── start.py         # /start
 │   │   └── dates.py         # поиск свидания, кнопки лайк/сходили/другое
 │   └── admin/
-│       ├── __init__.py
+│       ├── __init__.py      ← всегда пустой
 │       ├── dates.py         # FSM добавления свидания
 │       └── admins.py        # добавление/удаление/список админов
 │
 ├── keyboards/
-│   ├── __init__.py
+│   ├── __init__.py          ← всегда пустой
 │   ├── user.py              # кнопки для пользователя
 │   └── admin.py             # кнопки для админа (FSM-шаги, управление)
 │
 └── middlewares/
-    ├── __init__.py
-    └── admin.py             # проверка is_admin перед admin-хендлерами
+    ├── __init__.py          ← всегда пустой
+    ├── admin.py             # проверка is_admin перед admin-хендлерами
+    └── database.py          # открытие AsyncSession на каждый апдейт
 ```
 
 ---
@@ -65,8 +66,9 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     BOT_TOKEN: str
-
+    FIRST_ADMIN_ID: int | None = None   # если задан и в БД нет ни одного админа — создаётся автоматически
     DB_PATH: str = "bot.db"
+    TELEGRAM_PROXY: str | None = None   # например socks5://user:pass@host:port
 
     class Config:
         env_file = ".env"
@@ -221,14 +223,15 @@ class UserService:
 class AdminMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
         user = data.get("event_from_user")
-        session = data["session"]                  # сессия из другого middleware
+        session = data["session"]                  # сессия из DatabaseMiddleware
         db_user = await UserRepository(session).get_by_id(user.id)
 
         if not db_user or not db_user.is_admin:
-            await event.answer("⛔ Нет доступа")
-            return
+            if hasattr(event, "answer"):
+                await event.answer("⛔ Нет доступа")
+            return                                 # не передаём управление хендлеру
 
-        await handler(event, data)
+        return await handler(event, data)
 ```
 
 Вешается **только** на admin-роутер, не глобально.
@@ -262,9 +265,10 @@ class AddDateFSM(StatesGroup):
     photo       = State()
 
 class SearchFSM(StatesGroup):
-    is_home = State()
-    cash    = State()
-    time    = State()
+    is_home  = State()
+    cash     = State()
+    time     = State()
+    browsing = State()   # активен пока пользователь листает карточки
 
 class AddAdminFSM(StatesGroup):
     telegram_id = State()
@@ -333,17 +337,34 @@ await state.clear()
 
 ---
 
-## Регистрация роутеров в handlers/**init**.py
+## Регистрация роутеров
+
+Все роутеры регистрируются явно в `main.py`. Файлы `__init__.py` **всегда пустые**.
 
 ```python
-from aiogram import Router
-from .user.start import router as start_router
-from .user.dates import router as user_dates_router
-from .admin.dates import router as admin_dates_router
-from .admin.admins import router as admin_admins_router
-from middlewares.admin import AdminMiddleware
+# main.py
+from bot.handlers.user.start import router as start_router
+from bot.handlers.user.dates import router as user_dates_router
+from bot.handlers.admin.dates import router as admin_dates_router
+from bot.handlers.admin.admins import router as admin_admins_router
+from bot.middlewares.admin import AdminMiddleware
+from bot.middlewares.database import DatabaseMiddleware
+```
 
-def register_all_routers(dp):
+---
+
+## main.py
+
+```python
+async def main():
+    bot = Bot(token=settings.BOT_TOKEN)
+    dp = Dispatcher()
+
+    await init_db()
+
+    dp.update.middleware(DatabaseMiddleware())   # сессия в каждый апдейт
+
+    # Регистрируем роутеры напрямую в main.py — __init__.py всегда пустые
     dp.include_router(start_router)
     dp.include_router(user_dates_router)
 
@@ -353,22 +374,6 @@ def register_all_routers(dp):
     admin_router.include_router(admin_dates_router)
     admin_router.include_router(admin_admins_router)
     dp.include_router(admin_router)
-```
-
----
-
-## main.py
-
-```python
-async def main():
-    logging.basicConfig(level=logging.INFO)
-    bot = Bot(token=settings.BOT_TOKEN)
-    dp = Dispatcher()
-
-    await init_db()
-
-    dp.update.middleware(DatabaseMiddleware())   # сессия в каждый апдейт
-    register_all_routers(dp)
 
     await dp.start_polling(bot)
 
