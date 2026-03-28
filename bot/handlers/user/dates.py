@@ -1,6 +1,7 @@
 from contextlib import suppress
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InaccessibleMessage, InputMediaPhoto
 from loguru import logger
@@ -331,17 +332,20 @@ async def cb_next(query: CallbackQuery, state: FSMContext, session: AsyncSession
     caption = f"{date.description}\n\n{location_text} · {cash_text} · ⏱ {date.time} ч"
 
     if query.message and not isinstance(query.message, InaccessibleMessage):
-        if date.photo_file_id:
-            await query.message.edit_media(
-                media=InputMediaPhoto(media=date.photo_file_id, caption=caption, parse_mode="HTML"),
-                reply_markup=date_card_kb(date.id, is_liked),
-            )
-        else:
-            await query.message.edit_text(
-                text=caption,
-                reply_markup=date_card_kb(date.id, is_liked),
-                parse_mode="HTML",
-            )
+        with suppress(TelegramBadRequest):
+            if date.photo_file_id:
+                await query.message.edit_media(
+                    media=InputMediaPhoto(
+                        media=date.photo_file_id, caption=caption, parse_mode="HTML"
+                    ),
+                    reply_markup=date_card_kb(date.id, is_liked),
+                )
+            else:
+                await query.message.edit_text(
+                    text=caption,
+                    reply_markup=date_card_kb(date.id, is_liked),
+                    parse_mode="HTML",
+                )
     else:
         if date.photo_file_id and query.message:
             await query.message.answer_photo(
