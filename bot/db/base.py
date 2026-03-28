@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from bot.config import settings
-from bot.db.models import User
 
 engine = create_async_engine(
     f"sqlite+aiosqlite:///{settings.DB_PATH}",
@@ -65,6 +64,7 @@ async def _ensure_initial_admin() -> None:
 
     Использует отдельную сессию для безопасной работы с БД.
     """
+    from bot.db.models import User
 
     if not settings.FIRST_ADMIN_ID:
         logger.debug("FIRST_ADMIN_ID not set, skipping initial admin creation")
