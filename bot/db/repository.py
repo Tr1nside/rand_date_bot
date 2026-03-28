@@ -1,10 +1,13 @@
 from datetime import datetime
+from typing import TypedDict
 
 from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.models import Date, User, UserHistory
+
+TOP_DATES_LIMIT = 5
 
 
 class DateRepository:
@@ -145,7 +148,7 @@ class UserRepository:
 
         Args:
             user_id: Telegram ID пользователя.
-            value: True — назначить, False — снять.
+            action_value: True — назначить, False — снять.
 
         Returns:
             True если пользователь найден и обновлён, False если не найден.
@@ -161,9 +164,7 @@ class UserRepository:
 
     async def get_all_admins(self) -> list[User]:
         """Возвращает список всех администраторов."""
-        execute_result = await self._session.execute(
-            select(User).where(User.is_admin == True)  # noqa: E712
-        )
+        execute_result = await self._session.execute(select(User).where(User.is_admin.is_(True)))
         return list(execute_result.scalars().all())
 
 
@@ -245,3 +246,133 @@ class HistoryRepository:
         )
         record = execute_result.scalar_one_or_none()
         return record.is_liked if record else False
+
+
+class DateFilterStats(TypedDict):
+    """Разбивка свиданий по фильтрам is_home и cash.
+
+    Attributes:
+        home_count: Количество свиданий дома.
+        outside_count: Количество свиданий вне дома.
+        cash_breakdown: Словарь вида {уровень_бюджета: количество}.
+    """
+
+    home_count: int
+    outside_count: int
+    cash_breakdown: dict[int, int]
+
+
+class StatsRepository:
+    """Репозиторий для получения агрегированной статистики бота.
+
+    Предоставляет методы для сбора счётчиков по свиданиям и пользователям.
+    Не содержит бизнес-логики — только SQL-агрегации.
+
+    Attributes:
+        _session: Асинхронная сессия SQLAlchemy.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_total_dates(self) -> int:
+        """Возвращает общее количество свиданий в базе."""
+        result = await self._session.execute(select(func.count(Date.id)))
+        return result.scalar_one()
+
+    async def get_top_liked(
+        self,
+        limit: int = TOP_DATES_LIMIT,
+    ) -> list[tuple[Date, int]]:
+        """Возвращает топ свиданий по количеству лайков.
+
+        Args:
+            limit: Максимальное количество записей в результате.
+
+        Returns:
+            Список кортежей (Date, количество_лайков), отсортированных по убыванию.
+        """
+        likes_count = func.count(UserHistory.id).label("likes_count")
+        stmt = (
+            select(Date, likes_count)
+            .join(UserHistory, UserHistory.date_id == Date.id)
+            .where(UserHistory.is_liked.is_(True))
+            .group_by(Date.id)
+            .order_by(func.count(UserHistory.id).desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [(date, count) for date, count in result.all()]
+
+    async def get_top_visited(
+        self,
+        limit: int = TOP_DATES_LIMIT,
+    ) -> list[tuple[Date, int]]:
+        """Возвращает топ свиданий по количеству посещений.
+
+        Args:
+            limit: Максимальное количество записей в результате.
+
+        Returns:
+            Список кортежей (Date, количество_посещений), отсортированных по убыванию.
+        """
+        visits_count = func.count(UserHistory.id).label("visits_count")
+        stmt = (
+            select(Date, visits_count)
+            .join(UserHistory, UserHistory.date_id == Date.id)
+            .where(UserHistory.dropped_at.isnot(None))
+            .group_by(Date.id)
+            .order_by(func.count(UserHistory.id).desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return [(date, count) for date, count in result.all()]
+
+    async def get_dates_count_by_filter(self) -> DateFilterStats:
+        """Возвращает разбивку свиданий по месту и уровню бюджета.
+
+        Returns:
+            DateFilterStats с полями home_count, outside_count и cash_breakdown.
+        """
+        home_result = await self._session.execute(
+            select(Date.is_home, func.count(Date.id)).group_by(Date.is_home)
+        )
+        home_rows = home_result.all()
+        home_count = next((cnt for flag, cnt in home_rows if flag), 0)
+        outside_count = next((cnt for flag, cnt in home_rows if not flag), 0)
+
+        cash_result = await self._session.execute(
+            select(Date.cash, func.count(Date.id)).group_by(Date.cash)
+        )
+        cash_breakdown: dict[int, int] = {}
+        for level, cnt in cash_result.all():
+            cash_breakdown[level] = cnt
+
+        return DateFilterStats(
+            home_count=home_count,
+            outside_count=outside_count,
+            cash_breakdown=cash_breakdown,
+        )
+
+    async def get_users_total(self) -> int:
+        """Возвращает общее количество зарегистрированных пользователей."""
+        result = await self._session.execute(select(func.count(User.id)))
+        return result.scalar_one()
+
+    async def get_active_users_count(self) -> int:
+        """Возвращает количество пользователей хотя бы с одним посещением."""
+        subq = (
+            select(UserHistory.user_id)
+            .where(UserHistory.dropped_at.isnot(None))
+            .distinct()
+            .subquery()
+        )
+        result = await self._session.execute(select(func.count()).select_from(subq))
+        return result.scalar_one()
+
+    async def get_admins_count(self) -> int:
+        """Возвращает количество администраторов."""
+        result = await self._session.execute(
+            select(func.count(User.id)).where(User.is_admin.is_(True))
+        )
+        return result.scalar_one()

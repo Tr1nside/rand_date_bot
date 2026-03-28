@@ -53,6 +53,7 @@ async def set_bot_commands(bot: Bot) -> None:
                 BotCommand(command="add_admin", description="Добавить администратора (админ)"),
                 BotCommand(command="remove_admin", description="Удалить администратора (админ)"),
                 BotCommand(command="list_admins", description="Список администраторов (админ)"),
+                BotCommand(command="stats", description="Статистика бота (админ)"),
             ],
             scope=BotCommandScopeChat(chat_id=settings.FIRST_ADMIN_ID),
         )
