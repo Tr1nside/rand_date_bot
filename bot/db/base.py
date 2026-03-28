@@ -1,8 +1,10 @@
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from bot.config import settings
+from bot.db.models import User
 
 engine = create_async_engine(
     f"sqlite+aiosqlite:///{settings.DB_PATH}",
@@ -18,37 +20,71 @@ class Base(DeclarativeBase):
 
 
 async def init_db() -> None:
-    """Создаёт все таблицы в базе данных и инициализирует первого администратора.
+    """Инициализирует базу данных: создаёт таблицы и первого администратора.
 
-    Использует Base.metadata.create_all для создания таблиц.
-    Если задан FIRST_ADMIN_ID в конфиге и в БД нет ни одного администратора —
-    создаёт запись первого администратора.
+    Последовательно выполняет:
+    1. Создание всех таблиц по метаданным SQLAlchemy.
+    2. Создание записи первого администратора, если задан FIRST_ADMIN_ID
+       и в БД отсутствует хотя бы один админ.
+
+    Raises:
+        Exception: Если не удалось создать таблицы БД (ошибка пробрасывается дальше).
     """
     logger.info("Initializing database (creating tables)")
-    from bot.config import settings
-    from bot.db.models import User
 
+    await _create_tables()
+
+    await _ensure_initial_admin()
+
+
+async def _create_tables() -> None:
+    """Создаёт все таблицы в БД через Base.metadata.create_all.
+
+    Использует engine.begin() для безопасного получения соединения.
+    Ошибки логируются и пробрасываются выше для корректной остановки бота.
+
+    Raises:
+        Exception: При ошибке создания таблиц.
+    """
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables created successfully")
     except Exception:
         logger.exception("Failed to create database tables")
         raise
+    else:
+        logger.info("Database tables created successfully")
 
-    if settings.FIRST_ADMIN_ID:
-        logger.debug("FIRST_ADMIN_ID is set: {}", settings.FIRST_ADMIN_ID)
-        async with async_session() as session:
-            from sqlalchemy import select
 
+async def _ensure_initial_admin() -> None:
+    """Создаёт первого администратора, если это необходимо.
+
+    Проверяет наличие settings.FIRST_ADMIN_ID.
+    Если значение задано и в БД нет ни одного пользователя с is_admin=True —
+    создаёт новую запись администратора.
+
+    Использует отдельную сессию для безопасной работы с БД.
+    """
+
+    if not settings.FIRST_ADMIN_ID:
+        logger.debug("FIRST_ADMIN_ID not set, skipping initial admin creation")
+        return
+
+    logger.debug("FIRST_ADMIN_ID is set: {}", settings.FIRST_ADMIN_ID)
+
+    async with async_session() as session:
+        try:
             admin_find_result = await session.execute(
                 select(User).where(User.is_admin == True).limit(1)  # noqa: E712
             )
             existing_admin = admin_find_result.scalar_one_or_none()
 
-            if not existing_admin:
+            if existing_admin:
+                logger.debug("Admin already exists, skipping creation")
+            else:
                 logger.info(
-                    "No admin found. Creating initial admin with id {}", settings.FIRST_ADMIN_ID
+                    "No admin found. Creating initial admin with id {}",
+                    settings.FIRST_ADMIN_ID,
                 )
                 admin = User(
                     id=settings.FIRST_ADMIN_ID,
@@ -58,5 +94,6 @@ async def init_db() -> None:
                 session.add(admin)
                 await session.commit()
                 logger.info("Initial admin created successfully")
-            else:
-                logger.debug("Admin already exists, skipping creation")
+
+        except Exception:
+            logger.exception("Failed to create initial admin")

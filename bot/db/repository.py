@@ -1,10 +1,13 @@
 from datetime import datetime
+from typing import TypedDict
 
 from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.db.models import Date, User, UserHistory
+
+TOP_DATES_LIMIT = 5
 
 
 class DateRepository:
@@ -52,9 +55,9 @@ class DateRepository:
             .limit(1)
         )
 
-        execute_result = await self._session.execute(stmt)
-        scalar_result = execute_result.scalar_one_or_none()
-        if scalar_result is None:
+        execute_execute_result = await self._session.execute(stmt)
+        scalar_execute_result = execute_execute_result.scalar_one_or_none()
+        if scalar_execute_result is None:
             logger.info(
                 "No date found for user {} (cash={}, time={}, is_home={})",
                 user_id,
@@ -62,7 +65,7 @@ class DateRepository:
                 time,
                 is_home,
             )
-        return scalar_result
+        return scalar_execute_result
 
     async def get_by_id(self, date_id: int) -> Date | None:
         """Возвращает свидание по его ID.
@@ -73,8 +76,8 @@ class DateRepository:
         Returns:
             Объект Date или None если не найдено.
         """
-        execute_result = await self._session.execute(select(Date).where(Date.id == date_id))
-        return execute_result.scalar_one_or_none()
+        execute_execute_result = await self._session.execute(select(Date).where(Date.id == date_id))
+        return execute_execute_result.scalar_one_or_none()
 
     async def add(self, date: Date) -> Date:
         """Добавляет новое свидание в базу данных.
@@ -114,8 +117,8 @@ class UserRepository:
         Returns:
             Объект User.
         """
-        execute_result = await self._session.execute(select(User).where(User.id == user_id))
-        user = execute_result.scalar_one_or_none()
+        execute_execute_result = await self._session.execute(select(User).where(User.id == user_id))
+        user = execute_execute_result.scalar_one_or_none()
 
         if user is None:
             user = User(id=user_id, username=username)
@@ -137,15 +140,15 @@ class UserRepository:
         Returns:
             Объект User или None если не найден.
         """
-        execute_result = await self._session.execute(select(User).where(User.id == user_id))
-        return execute_result.scalar_one_or_none()
+        execute_execute_result = await self._session.execute(select(User).where(User.id == user_id))
+        return execute_execute_result.scalar_one_or_none()
 
     async def set_admin(self, user_id: int, action_value: bool) -> bool:
         """Устанавливает или снимает права администратора.
 
         Args:
             user_id: Telegram ID пользователя.
-            value: True — назначить, False — снять.
+            action_value: True — назначить, False — снять.
 
         Returns:
             True если пользователь найден и обновлён, False если не найден.
@@ -161,10 +164,10 @@ class UserRepository:
 
     async def get_all_admins(self) -> list[User]:
         """Возвращает список всех администраторов."""
-        execute_result = await self._session.execute(
-            select(User).where(User.is_admin == True)  # noqa: E712
+        execute_execute_result = await self._session.execute(
+            select(User).where(User.is_admin.is_(True))
         )
-        return list(execute_result.scalars().all())
+        return list(execute_execute_result.scalars().all())
 
 
 class HistoryRepository:
@@ -183,13 +186,13 @@ class HistoryRepository:
         Returns:
             Объект UserHistory.
         """
-        execute_result = await self._session.execute(
+        execute_execute_result = await self._session.execute(
             select(UserHistory).where(
                 UserHistory.user_id == user_id,
                 UserHistory.date_id == date_id,
             )
         )
-        record = execute_result.scalar_one_or_none()
+        record = execute_execute_result.scalar_one_or_none()
 
         if record is None:
             record = UserHistory(user_id=user_id, date_id=date_id)
@@ -237,11 +240,165 @@ class HistoryRepository:
         Returns:
             True если свидание лайкнуто, иначе False.
         """
-        execute_result = await self._session.execute(
+        execute_execute_result = await self._session.execute(
             select(UserHistory).where(
                 UserHistory.user_id == user_id,
                 UserHistory.date_id == date_id,
             )
         )
-        record = execute_result.scalar_one_or_none()
+        record = execute_execute_result.scalar_one_or_none()
         return record.is_liked if record else False
+
+
+class DateFilterStats(TypedDict):
+    """Разбивка свиданий по фильтрам is_home и cash.
+
+    Attributes:
+        home_count: Количество свиданий дома.
+        outside_count: Количество свиданий вне дома.
+        cash_breakdown: Словарь вида {уровень_бюджета: количество}.
+    """
+
+    home_count: int
+    outside_count: int
+    cash_breakdown: dict[int, int]
+
+
+class StatsRepository:
+    """Репозиторий для получения агрегированной статистики бота.
+
+    Предоставляет методы для сбора счётчиков по свиданиям и пользователям.
+    Не содержит бизнес-логики — только SQL-агрегации.
+
+    Attributes:
+        _session: Асинхронная сессия SQLAlchemy.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_total_dates(self) -> int:
+        """Возвращает общее количество свиданий в базе."""
+        execute_result = await self._session.execute(select(func.count(Date.id)))
+        total = execute_result.scalar_one()
+        logger.debug("Total dates in DB: {}", total)
+        return total
+
+    async def get_top_liked(
+        self,
+        limit: int = TOP_DATES_LIMIT,
+    ) -> list[tuple[Date, int]]:
+        """Возвращает топ свиданий по количеству лайков.
+
+        Args:
+            limit: Максимальное количество записей в результате.
+
+        Returns:
+            Список кортежей (Date, количество_лайков), отсортированных по убыванию.
+        """
+        likes_count = func.count(UserHistory.id).label("likes_count")
+        stmt = (
+            select(Date, likes_count)
+            .join(UserHistory, UserHistory.date_id == Date.id)
+            .where(UserHistory.is_liked.is_(True))
+            .group_by(Date.id)
+            .order_by(func.count(UserHistory.id).desc())
+            .limit(limit)
+        )
+        execute_result = await self._session.execute(stmt)
+        rows = [(date, count) for date, count in execute_result.all()]
+        if rows:
+            logger.debug("get_top_liked: {} rows returned", len(rows))
+        else:
+            logger.warning("get_top_liked returned no rows — no likes in DB yet")
+        return rows
+
+    async def get_top_visited(
+        self,
+        limit: int = TOP_DATES_LIMIT,
+    ) -> list[tuple[Date, int]]:
+        """Возвращает топ свиданий по количеству посещений.
+
+        Args:
+            limit: Максимальное количество записей в результате.
+
+        Returns:
+            Список кортежей (Date, количество_посещений), отсортированных по убыванию.
+        """
+        visits_count = func.count(UserHistory.id).label("visits_count")
+        stmt = (
+            select(Date, visits_count)
+            .join(UserHistory, UserHistory.date_id == Date.id)
+            .where(UserHistory.dropped_at.isnot(None))
+            .group_by(Date.id)
+            .order_by(func.count(UserHistory.id).desc())
+            .limit(limit)
+        )
+        execute_result = await self._session.execute(stmt)
+        rows = [(date, count) for date, count in execute_result.all()]
+        if rows:
+            logger.debug("get_top_visited: {} rows returned", len(rows))
+        else:
+            logger.warning("get_top_visited returned no rows — no visits in DB yet")
+        return rows
+
+    async def get_dates_count_by_filter(self) -> DateFilterStats:
+        """Возвращает разбивку свиданий по месту и уровню бюджета.
+
+        Returns:
+            DateFilterStats с полями home_count, outside_count и cash_breakdown.
+        """
+        home_execute_result = await self._session.execute(
+            select(Date.is_home, func.count(Date.id)).group_by(Date.is_home)
+        )
+        home_rows = home_execute_result.all()
+        home_count = next((cnt for flag, cnt in home_rows if flag), 0)
+        outside_count = next((cnt for flag, cnt in home_rows if not flag), 0)
+
+        cash_execute_result = await self._session.execute(
+            select(Date.cash, func.count(Date.id)).group_by(Date.cash)
+        )
+        cash_breakdown: dict[int, int] = {}
+        for level, cnt in cash_execute_result.all():
+            cash_breakdown[level] = cnt
+
+        logger.debug(
+            "Filter breakdown: home={}, outside={}, cash={}",
+            home_count,
+            outside_count,
+            cash_breakdown,
+        )
+        return DateFilterStats(
+            home_count=home_count,
+            outside_count=outside_count,
+            cash_breakdown=cash_breakdown,
+        )
+
+    async def get_users_total(self) -> int:
+        """Возвращает общее количество зарегистрированных пользователей."""
+        execute_result = await self._session.execute(select(func.count(User.id)))
+        total = execute_result.scalar_one()
+        logger.debug("Total users in DB: {}", total)
+        return total
+
+    async def get_active_users_count(self) -> int:
+        """Возвращает количество пользователей хотя бы с одним посещением."""
+        subq = (
+            select(UserHistory.user_id)
+            .where(UserHistory.dropped_at.isnot(None))
+            .distinct()
+            .subquery()
+        )
+        execute_result = await self._session.execute(select(func.count()).select_from(subq))
+        active = execute_result.scalar_one()
+        logger.debug("Active users (>=1 visit): {}", active)
+        return active
+
+    async def get_admins_count(self) -> int:
+        """Возвращает количество администраторов."""
+        execute_result = await self._session.execute(
+            select(func.count(User.id)).where(User.is_admin.is_(True))
+        )
+        count = execute_result.scalar_one()
+        logger.debug("Admins count: {}", count)
+        return count

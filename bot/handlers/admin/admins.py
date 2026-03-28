@@ -1,3 +1,5 @@
+from typing import Final
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -6,10 +8,106 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.keyboards.admin import admin_fsm_nav_kb
+from bot.services.date_service import BotStats, DateService
 from bot.services.user_service import UserService
 from bot.states import AddAdminFSM, RemoveAdminFSM
 
 router = Router()
+
+MAX_DESCRIPTION_LENGTH = 45
+CASH_LABELS: Final[dict[int, str]] = {1: "💸", 2: "💸💸", 3: "💸💸💸"}
+
+
+def _truncate_description(text: str) -> str:
+    """Обрезает описание свидания до допустимой длины.
+
+    Args:
+        text: Исходный текст описания.
+
+    Returns:
+        Текст длиной не более MAX_DESCRIPTION_LENGTH символов.
+    """
+    if len(text) <= MAX_DESCRIPTION_LENGTH:
+        return text
+    return text[:MAX_DESCRIPTION_LENGTH] + "…"
+
+
+def _format_stats_message(stats: BotStats) -> str:
+    """Формирует HTML-сообщение со статистикой бота.
+
+    Args:
+        stats: DTO с агрегированной статистикой.
+
+    Returns:
+        Отформатированная строка для отправки с parse_mode='HTML'.
+    """
+    lines: list[str] = []
+
+    lines.append("📊 <b>Статистика бота</b>\n")
+
+    lines.append("📅 <b>Свидания</b>")
+    lines.append(f"Всего в базе: <b>{stats['total_dates']}</b>\n")
+
+    lines.append("❤️ <b>Топ-5 по лайкам:</b>")
+    if stats["top_liked"]:
+        for idx, (date, count) in enumerate(stats["top_liked"], start=1):
+            desc = _truncate_description(date.description)
+            lines.append(f"{idx}. {desc} — <b>{count}</b> лайк(ов)")
+    else:
+        lines.append("Нет данных")
+
+    lines.append("")
+    lines.append("✅ <b>Топ-5 по посещениям:</b>")
+    if stats["top_visited"]:
+        for idx, (date, count) in enumerate(stats["top_visited"], start=1):
+            desc = _truncate_description(date.description)
+            lines.append(f"{idx}. {desc} — <b>{count}</b> посещений")
+    else:
+        lines.append("Нет данных")
+
+    lines.append("")
+    lines.append("🏠 <b>По месту:</b>")
+    lines.append(f"• Дома: <b>{stats['home_count']}</b>")
+    lines.append(f"• Вне дома: <b>{stats['outside_count']}</b>")
+
+    lines.append("")
+    lines.append("💸 <b>По бюджету:</b>")
+    for level in (1, 2, 3):
+        count = stats["cash_breakdown"].get(level, 0)
+        label = CASH_LABELS[level]
+        lines.append(f"• {label}: <b>{count}</b>")
+
+    lines.append("")
+    lines.append("👥 <b>Пользователи</b>")
+    lines.append(f"• Всего: <b>{stats['total_users']}</b>")
+    lines.append(f"• Активных: <b>{stats['active_users']}</b>")
+    lines.append(f"• Администраторов: <b>{stats['admins_count']}</b>")
+
+    return "\n".join(lines)
+
+
+@router.message(Command("stats"))
+async def cmd_stats(message: Message, session: AsyncSession) -> None:
+    """Отправляет агрегированную статистику бота администратору.
+
+    Args:
+        message: Входящее сообщение с командой /stats.
+        session: Асинхронная сессия БД.
+    """
+    if message.from_user:
+        logger.info("User {} requested bot stats", message.from_user.id)
+
+    service = DateService(session)
+    try:
+        stats = await service.get_stats()
+    except Exception as exc:
+        logger.exception(
+            "Failed to fetch stats for user {}: {}", message.from_user and message.from_user.id, exc
+        )
+        await message.answer("⚠️ Не удалось получить статистику. Попробуйте позже.")
+        return
+
+    await message.answer(_format_stats_message(stats), parse_mode="HTML")
 
 
 @router.message(Command("list_admins"))
@@ -140,7 +238,6 @@ async def fsm_remove_admin_id(message: Message, state: FSMContext, session: Asyn
         state: FSM-контекст.
         session: Асинхронная сессия БД.
     """
-
     if message.from_user is None:
         logger.warning("User data in message is None")
         return
