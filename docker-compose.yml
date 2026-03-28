@@ -1,0 +1,20 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      DB_PATH: /app/data/bot.db
+
+    volumes:
+      - ./bot.db:/app/data/bot.db
+      - bot_logs:/app/logs
+
+    network_mode: host
+
+volumes:
+  bot_data:
+  bot_logs:

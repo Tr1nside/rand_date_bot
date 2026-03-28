@@ -1,0 +1,13 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+.env
+bot.db
+logs/
+.git
+.pre-commit-config.yaml
+requirements-dev.txt
+docs/
+*.md
+uv.lock
