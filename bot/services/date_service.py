@@ -3,7 +3,7 @@ from typing import TypedDict
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db.models import Date
+from bot.db.models import Date, UserHistory
 from bot.db.repository import DateRepository, HistoryRepository, StatsRepository
 
 
@@ -194,3 +194,28 @@ class DateService:
         except Exception:
             logger.exception("Failed to collect bot stats")
             raise
+
+    async def get_history_page(
+        self,
+        user_id: int,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[tuple[UserHistory, Date]], int]:
+        """Возвращает страницу истории посещённых свиданий и общее их количество.
+
+        Делегирует запросы репозиторию, вычисляя смещение по номеру страницы.
+        Оба запроса к БД выполняются в рамках одной сессии.
+
+        Args:
+            user_id: Telegram ID пользователя.
+            page: Номер страницы (начиная с 0).
+            page_size: Количество записей на одной странице.
+
+        Returns:
+            Кортеж из списка (UserHistory, Date) для текущей страницы
+            и целого числа — общего количества посещённых свиданий.
+        """
+        offset = page * page_size
+        visited_items = await self.history.get_visited_by_user(user_id, page_size, offset)
+        total = await self.history.get_visited_count(user_id)
+        return visited_items, total

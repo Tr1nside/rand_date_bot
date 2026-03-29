@@ -1,11 +1,14 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+HISTORY_PAGE_SIZE = 5
+
 
 def main_menu_kb() -> InlineKeyboardMarkup:
-    """Возвращает главное меню с кнопкой поиска свидания."""
+    """Возвращает главное меню с кнопками поиска свидания и истории."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💘 Найти свидание", callback_data="loc:start")]
+            [InlineKeyboardButton(text="💘 Найти свидание", callback_data="loc:start")],
+            [InlineKeyboardButton(text="📜 История", callback_data="history:page:0")],
         ]
     )
 
@@ -74,3 +77,44 @@ def date_card_kb(date_id: int, is_liked: bool) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def history_page_kb(page: int, total_pages: int) -> InlineKeyboardMarkup:
+    """Возвращает клавиатуру пагинации для истории посещённых свиданий.
+
+    Кнопки «← Назад» и «Вперёд →» показываются только при наличии
+    соответствующей страницы. Кнопка «🏠 Главное меню» присутствует всегда.
+
+    Args:
+        page: Текущий номер страницы (начиная с 0).
+        total_pages: Общее количество страниц.
+
+    Returns:
+        InlineKeyboardMarkup с кнопками навигации по истории.
+    """
+    nav_row: list[InlineKeyboardButton] = []
+
+    if page > 0:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="← Назад",
+                callback_data=f"history:page:{page - 1}",
+            )
+        )
+
+    if page < total_pages - 1:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="Вперёд →",
+                callback_data=f"history:page:{page + 1}",
+            )
+        )
+
+    menu_row = [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")]
+
+    inline_keyboard: list[list[InlineKeyboardButton]] = []
+    if nav_row:
+        inline_keyboard.append(nav_row)
+    inline_keyboard.append(menu_row)
+
+    return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
