@@ -14,19 +14,20 @@ def main_menu_kb() -> InlineKeyboardMarkup:
 
 
 def search_location_kb() -> InlineKeyboardMarkup:
-    """Возвращает клавиатуру выбора места проведения свидания."""
+    """Возвращает клавиатуру выбора места проведения свидания с кнопкой отмены."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="🏠 Дома", callback_data="loc:home"),
                 InlineKeyboardButton(text="🌆 Вне дома", callback_data="loc:outside"),
-            ]
+            ],
+            [InlineKeyboardButton(text="✖ Отмена", callback_data="fsm:cancel")],
         ]
     )
 
 
 def search_cash_kb() -> InlineKeyboardMarkup:
-    """Возвращает клавиатуру выбора уровня бюджета."""
+    """Возвращает клавиатуру выбора уровня бюджета с кнопками назад и отмены."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -34,7 +35,10 @@ def search_cash_kb() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="💸💸", callback_data="cash:2"),
                 InlineKeyboardButton(text="💸💸💸", callback_data="cash:3"),
             ],
-            [InlineKeyboardButton(text="✖ Отмена", callback_data="fsm:cancel")],
+            [
+                InlineKeyboardButton(text="← Назад", callback_data="fsm:back"),
+                InlineKeyboardButton(text="✖ Отмена", callback_data="fsm:cancel"),
+            ],
         ]
     )
 
@@ -65,7 +69,7 @@ def date_card_kb(date_id: int, is_liked: bool) -> InlineKeyboardMarkup:
         is_liked: Текущий статус лайка пользователя.
 
     Returns:
-        InlineKeyboardMarkup с кнопками лайка, посещения и поиска другого.
+        InlineKeyboardMarkup с кнопками лайка, посещения, другого и главного меню.
     """
     like_text = "💔 Убрать лайк" if is_liked else "❤️ Лайк"
     return InlineKeyboardMarkup(
@@ -74,7 +78,8 @@ def date_card_kb(date_id: int, is_liked: bool) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text=like_text, callback_data=f"like:{date_id}"),
                 InlineKeyboardButton(text="✅ Сходили", callback_data=f"visited:{date_id}"),
                 InlineKeyboardButton(text="🔄 Другое", callback_data="next"),
-            ]
+            ],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
         ]
     )
 
