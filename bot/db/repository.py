@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from loguru import logger
 from sqlalchemy import func, select
@@ -249,6 +249,55 @@ class HistoryRepository:
         record = execute_execute_result.scalar_one_or_none()
         return record.is_liked if record else False
 
+    async def get_visited_by_user(
+        self,
+        user_id: int,
+        limit: int,
+        offset: int,
+    ) -> list[tuple[UserHistory, Date]]:
+        """Возвращает страницу посещённых свиданий пользователя с данными свидания.
+
+        Выполняет JOIN с таблицей dates, чтобы вернуть историю и свидание одним запросом.
+        Результат отсортирован от новых к старым по дате посещения.
+
+        Args:
+            user_id: Telegram ID пользователя.
+            limit: Максимальное количество записей на странице.
+            offset: Смещение от начала выборки.
+
+        Returns:
+            Список кортежей (UserHistory, Date) для отображения страницы истории.
+        """
+        stmt = (
+            select(UserHistory, Date)
+            .join(Date, Date.id == UserHistory.date_id)
+            .where(
+                UserHistory.user_id == user_id,
+                UserHistory.dropped_at.isnot(None),
+            )
+            .order_by(UserHistory.dropped_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        execute_result = await self._session.execute(stmt)
+        return cast(list[tuple[UserHistory, Date]], execute_result.all())
+
+    async def get_visited_count(self, user_id: int) -> int:
+        """Возвращает общее количество посещённых свиданий пользователя.
+
+        Args:
+            user_id: Telegram ID пользователя.
+
+        Returns:
+            Целое число — количество записей с непустым dropped_at.
+        """
+        stmt = select(func.count(UserHistory.id)).where(
+            UserHistory.user_id == user_id,
+            UserHistory.dropped_at.isnot(None),
+        )
+        execute_result = await self._session.execute(stmt)
+        return execute_result.scalar_one()
+
 
 class DateFilterStats(TypedDict):
     """Разбивка свиданий по фильтрам is_home и cash.
@@ -306,7 +355,7 @@ class StatsRepository:
             .limit(limit)
         )
         execute_result = await self._session.execute(stmt)
-        rows = [(date, count) for date, count in execute_result.all()]
+        rows = cast(list[tuple[Date, int]], execute_result.all())
         if rows:
             logger.debug("get_top_liked: {} rows returned", len(rows))
         else:
@@ -335,7 +384,7 @@ class StatsRepository:
             .limit(limit)
         )
         execute_result = await self._session.execute(stmt)
-        rows = [(date, count) for date, count in execute_result.all()]
+        rows = cast(list[tuple[Date, int]], execute_result.all())
         if rows:
             logger.debug("get_top_visited: {} rows returned", len(rows))
         else:
